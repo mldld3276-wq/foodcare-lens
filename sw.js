@@ -2,7 +2,7 @@
    네트워크 우선(항상 최신), 실패 시에만 캐시 사용.
    중요: fetch에 cache:"no-store"를 줘서 브라우저 HTTP 캐시를 우회한다.
    (이걸 안 하면 폰 앱이 디스크에 캐시된 구버전 파일을 계속 로드함) */
-var CACHE = "foodcare-v20";
+var CACHE = "foodcare-v21";
 var SHELL = [
   ".", "index.html", "manifest.webmanifest", "icon.svg",
   "js/judge.js", "js/parser.js", "js/ai.js", "js/diary.js", "js/advice.js",
