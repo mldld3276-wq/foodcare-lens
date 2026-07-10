@@ -4,7 +4,7 @@
   "use strict";
 
   // 앱 버전 — 배포할 때마다 올린다. 폰에서 최신 버전이 로드됐는지 확인용.
-  var APP_VERSION = "2.3";
+  var APP_VERSION = "2.4";
 
   var $ = function (id) { return document.getElementById(id); };
   var screens = ["home", "camera", "progress", "manual", "result", "food", "diary",
@@ -78,11 +78,27 @@
   }
 
   // ── 음성 + 자막 — 모든 안내는 소리와 글로 동시에 ─────────────
+  var captionCollapsed = false;
+  try { captionCollapsed = localStorage.getItem("fc_caption_collapsed") === "1"; } catch (e) { /* ignore */ }
+
+  function applyCaptionState() {
+    var cap = $("caption");
+    var active = cap.classList.contains("show");
+    cap.classList.toggle("collapsed", captionCollapsed);
+    // 자막이 활성이면서 접혀 있을 때만 '펼치기(💬)' 버튼 노출
+    $("caption-show").classList.toggle("show", active && captionCollapsed);
+  }
+  function setCaptionCollapsed(c) {
+    captionCollapsed = c;
+    try { localStorage.setItem("fc_caption_collapsed", c ? "1" : "0"); } catch (e) { /* ignore */ }
+    applyCaptionState();
+  }
+
   function speak(text) {
     lastSpeech = text;
-    var cap = $("caption");
-    cap.textContent = "💬 " + text;
-    cap.classList.add("show");
+    $("caption-text").textContent = "💬 " + text;
+    $("caption").classList.add("show");
+    applyCaptionState(); // 접힘 상태 유지 (접었으면 💬 버튼만 보이고 자막은 아래로)
     try {
       if (!("speechSynthesis" in window)) return;
       window.speechSynthesis.cancel();
@@ -862,6 +878,10 @@
     speak("무엇을 확인할까요?");
   });
   $("btn-speak").addEventListener("click", function () { if (lastSpeech) speak(lastSpeech); });
+
+  // 자막 접기 / 펼치기
+  $("caption-toggle").addEventListener("click", function () { setCaptionCollapsed(true); });
+  $("caption-show").addEventListener("click", function () { setCaptionCollapsed(false); });
 
   // 음식 결과 화면
   [].forEach.call(document.querySelectorAll(".mchip"), function (btn) {

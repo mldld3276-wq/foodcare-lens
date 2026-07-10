@@ -226,10 +226,25 @@
   #caption {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
     background: rgba(17, 17, 17, 0.92); color: #fff;
-    padding: 12px 18px; font-size: 1.12rem; line-height: 1.45; text-align: center;
+    padding: 12px 54px 12px 18px; font-size: 1.12rem; line-height: 1.45; text-align: center;
     min-height: 24px; max-height: 32vh; overflow-y: auto; display: none;
+    transition: transform 0.28s ease;
   }
   #caption.show { display: block; }
+  #caption.collapsed { transform: translateY(100%); }   /* 아래로 접힘 */
+  #caption-toggle {
+    position: absolute; top: 8px; right: 10px;
+    background: rgba(255,255,255,0.18); border: none; color: #fff;
+    font-size: 1rem; line-height: 1; border-radius: 8px; padding: 6px 12px;
+    cursor: pointer; font-family: inherit;
+  }
+  #caption-show {
+    position: fixed; right: 14px; bottom: 14px; z-index: 51; display: none;
+    width: 52px; height: 52px; border-radius: 50%; border: none;
+    background: rgba(17,17,17,0.9); color: #fff; font-size: 1.5rem; cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+  }
+  #caption-show.show { display: block; }
 </style>
 </head>
 <body>
@@ -431,7 +446,12 @@
 <canvas id="capture-canvas" style="display:none;"></canvas>
 
 <!-- 자막 바: 모든 음성 안내가 글로도 표시됩니다 -->
-<div id="caption" role="status" aria-live="polite"></div>
+<div id="caption" role="status" aria-live="polite">
+  <span id="caption-text"></span>
+  <button id="caption-toggle" aria-label="자막 접기" title="자막 접기">▼</button>
+</div>
+<!-- 자막을 접었을 때 다시 펼치는 버튼 -->
+<button id="caption-show" aria-label="자막 다시 보기" title="자막 보기">💬</button>
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script src="js/judge.js"></script>
