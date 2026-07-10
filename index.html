@@ -201,11 +201,13 @@
 
   /* 행운 돌림판 */
   .ticket-count { font-size: 1.2rem; font-weight: bold; color: var(--accent); }
-  .wheel-wrap { position: relative; width: 280px; height: 280px; margin: 6px auto; }
+  /* 정확한 정원 — 가로세로 같은 값 + aspect-ratio, 작은 화면에서도 안 찌그러짐 */
+  .wheel-wrap { position: relative; width: 280px; max-width: 80vw; aspect-ratio: 1 / 1;
+    flex-shrink: 0; margin: 6px auto; }
   .wheel-pointer { position: absolute; top: -4px; left: 50%; transform: translateX(-50%); z-index: 3;
     width: 0; height: 0; border-left: 14px solid transparent; border-right: 14px solid transparent;
     border-top: 26px solid #111; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.3)); }
-  .wheel { width: 100%; height: 100%; border-radius: 50%; position: relative;
+  .wheel { width: 100%; height: 100%; border-radius: 50%; position: relative; aspect-ratio: 1 / 1;
     border: 6px solid #fff; box-shadow: 0 2px 12px rgba(0,0,0,0.25);
     transition: transform 4.5s cubic-bezier(0.15, 0.85, 0.2, 1); }
   .wheel .wlabel { position: absolute; top: 50%; left: 50%; color: #fff; font-weight: 900;
@@ -377,7 +379,7 @@
   <div id="wheel-result" class="wheel-result"></div>
   <button id="btn-spin" class="bigbtn">🎲 돌리기 (뽑기권 1장 사용)</button>
   <button id="btn-wheel-home" class="bigbtn secondary small">← 처음으로</button>
-  <p class="disclaimer">확률 — A 1% · B 4% · C 10% · D 20% · E 30% · F 35%. 결과는 기기에 기록됩니다.</p>
+  <p class="disclaimer">당첨 확률 40% · 꽝 60%. 결과는 기기에 기록됩니다.</p>
 </section>
 
 <!-- A등급 경품 응모 (이름·전화번호) -->

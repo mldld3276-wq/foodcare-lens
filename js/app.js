@@ -4,7 +4,7 @@
   "use strict";
 
   // 앱 버전 — 배포할 때마다 올린다. 폰에서 최신 버전이 로드됐는지 확인용.
-  var APP_VERSION = "1.9";
+  var APP_VERSION = "2.0";
 
   var $ = function (id) { return document.getElementById(id); };
   var screens = ["home", "camera", "progress", "manual", "result", "food", "diary",
@@ -546,20 +546,15 @@
 
   function buildWheel() {
     var wheel = $("wheel");
-    var grades = FoodDraw.GRADES;
-    var seg = 360 / grades.length;
-    // 색 섹터 (conic-gradient, 12시부터 시계방향)
-    var stops = grades.map(function (g, i) {
-      return g.color + " " + (i * seg) + "deg " + ((i + 1) * seg) + "deg";
-    }).join(", ");
-    wheel.style.background = "conic-gradient(" + stops + ")";
-    // 등급 글자 라벨 (섹터 중심에 배치, 휠과 함께 회전)
-    var R = 95, C = 140;
-    wheel.innerHTML = grades.map(function (g, i) {
-      var mid = (i * seg + seg / 2) * Math.PI / 180;
-      var x = C + R * Math.sin(mid), y = C - R * Math.cos(mid);
-      return "<span class='wlabel' style='left:" + x + "px; top:" + y +
-        "px; transform:translate(-50%,-50%);'>" + g.grade + "</span>";
+    // 색 섹터 (확률 비례 conic-gradient, 12시부터 시계방향)
+    wheel.style.background = "conic-gradient(" + FoodDraw.gradientStops() + ")";
+    // 라벨(당첨/꽝)을 섹터 중심에 % 좌표로 배치 → 휠 크기와 무관하게 항상 정확한 원
+    var Rp = 30; // 중심에서 반경 30%
+    wheel.innerHTML = FoodDraw.RESULTS.map(function (r) {
+      var mid = FoodDraw.centerAngle(r.key) * Math.PI / 180;
+      var x = 50 + Rp * Math.sin(mid), y = 50 - Rp * Math.cos(mid);
+      return "<span class='wlabel' style='left:" + x + "%; top:" + y +
+        "%; transform:translate(-50%,-50%);'>" + r.label + "</span>";
     }).join("");
     wheel.style.transform = "rotate(0deg)";
   }
@@ -581,10 +576,10 @@
     spinning = true;
     $("btn-spin").disabled = true;
     $("wheel-result").innerHTML = "";
-    var g = FoodDraw.drawGrade(Math.random());
+    var g = FoodDraw.drawResult(Math.random());
     lastGrade = g;
     // 목표 섹터 정렬 각도(0~360) + 여러 바퀴를 현재 회전에 '더해' 항상 앞으로 돌린다
-    var base = FoodDraw.angleForGrade(g.grade, 0);           // 360 - 섹터중심
+    var base = FoodDraw.angleForResult(g.key, 0);           // 360 - 섹터중심
     var spins = 5 + Math.floor(Math.random() * 3);
     var currentMod = ((wheelRotation % 360) + 360) % 360;
     var delta = ((base - currentMod) + 360) % 360;
@@ -593,14 +588,14 @@
     speak("돌림판을 돌립니다.");
     setTimeout(function () {
       spinning = false;
-      FoodDraw.logDraw({ ts: new Date().toISOString(), grade: g.grade });
+      FoodDraw.logDraw({ ts: new Date().toISOString(), result: g.key });
       if (g.prize) {
-        $("wheel-result").innerHTML = "<span class='a'>🎉 " + g.label + "</span>";
-        speak("축하해요! A등급 경품에 당첨됐어요! 이름과 전화번호를 남겨 주세요.");
+        $("wheel-result").innerHTML = "<span class='a'>🎉 당첨!</span>";
+        speak("축하해요! 경품에 당첨됐어요! 이름과 전화번호를 남겨 주세요.");
         setTimeout(function () { show("winner"); $("win-name").focus(); }, 1200);
       } else {
-        $("wheel-result").textContent = g.label + " 이 나왔어요";
-        speak(g.grade + "등급이 나왔어요. 다음 기회를 노려보세요.");
+        $("wheel-result").textContent = "아쉽지만 꽝이에요";
+        speak("아쉽지만 꽝이에요. 다음 기회를 노려보세요.");
         updateSpinButton(); // 결과는 유지하고 뽑기권·버튼만 갱신
       }
     }, 4700); // CSS transition(4.5s)보다 살짝 길게
@@ -615,7 +610,7 @@
     try {
       var log = FoodDraw.loadLog();
       for (var i = log.length - 1; i >= 0; i--) {
-        if (log[i].grade === "A" && !log[i].name) { log[i].name = name; log[i].phone = phone; break; }
+        if (log[i].result === "win" && !log[i].name) { log[i].name = name; log[i].phone = phone; break; }
       }
       localStorage.setItem("fc_draw_log", JSON.stringify(log));
     } catch (e) { /* ignore */ }
@@ -625,7 +620,7 @@
         var body = new URLSearchParams();
         body.append(GOOGLE_FORM.nameField, name);
         if (GOOGLE_FORM.phoneField) body.append(GOOGLE_FORM.phoneField, phone);
-        if (GOOGLE_FORM.gradeField) body.append(GOOGLE_FORM.gradeField, "A");
+        if (GOOGLE_FORM.gradeField) body.append(GOOGLE_FORM.gradeField, "당첨");
         fetch(GOOGLE_FORM.action, { method: "POST", mode: "no-cors", body: body });
       } catch (e) { /* 전송 실패해도 로컬엔 남음 */ }
     }

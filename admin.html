@@ -30,7 +30,7 @@
 </head>
 <body>
   <h1>🔐 푸드케어 렌즈 · 관리자</h1>
-  <p class="sub">A등급 경품 당첨자와 뽑기 로그를 확인하는 페이지입니다. (이 기기에 저장된 기록)</p>
+  <p class="sub">경품 당첨자와 뽑기 로그를 확인하는 페이지입니다. (이 기기에 저장된 기록)</p>
 
   <div id="gate" class="card">
     <p style="margin-bottom:10px; font-weight:bold;">관리자 비밀번호를 입력하세요</p>
@@ -44,7 +44,7 @@
       <div id="stats"></div>
     </div>
     <div class="card">
-      <h2 style="font-size:1.2rem; color:#B8860B; margin-bottom:8px;">🎉 A등급 경품 당첨자</h2>
+      <h2 style="font-size:1.2rem; color:#B8860B; margin-bottom:8px;">🎉 경품 당첨자</h2>
       <div id="winners"></div>
     </div>
     <div class="card">
@@ -73,19 +73,18 @@
   }
   function fmt(ts) { try { return new Date(ts).toLocaleString("ko-KR"); } catch (e) { return ts || ""; } }
 
+  var RESULT_KO = { win: "당첨", lose: "꽝" };
   function render() {
     var log = loadLog();
-    var wins = log.filter(function (e) { return e.grade === "A"; });
-    var counts = {};
-    log.forEach(function (e) { counts[e.grade] = (counts[e.grade] || 0) + 1; });
+    var wins = log.filter(function (e) { return e.result === "win"; });
+    var winCount = wins.length, loseCount = log.length - winCount;
     var statHtml = "<span class='stat'>총 뽑기 " + log.length + "회</span>" +
-      ["A","B","C","D","E","F"].map(function (g) {
-        return "<span class='stat'>" + g + "등급 " + (counts[g] || 0) + "</span>";
-      }).join("");
+      "<span class='stat'>🎉 당첨 " + winCount + "</span>" +
+      "<span class='stat'>꽝 " + loseCount + "</span>";
     document.getElementById("stats").innerHTML = statHtml;
 
     if (!wins.length) {
-      document.getElementById("winners").innerHTML = "<p class='muted'>아직 A등급 당첨자가 없습니다.</p>";
+      document.getElementById("winners").innerHTML = "<p class='muted'>아직 당첨자가 없습니다.</p>";
     } else {
       document.getElementById("winners").innerHTML =
         "<table><tr><th>이름</th><th>전화번호</th><th>당첨 시각</th></tr>" +
@@ -96,17 +95,18 @@
     }
 
     document.getElementById("log").innerHTML =
-      "<table><tr><th>등급</th><th>시각</th><th>이름</th><th>전화</th></tr>" +
+      "<table><tr><th>결과</th><th>시각</th><th>이름</th><th>전화</th></tr>" +
       log.slice().reverse().map(function (e) {
-        return "<tr" + (e.grade === "A" ? " class='win'" : "") + "><td>" + esc(e.grade) + "</td><td>" +
+        return "<tr" + (e.result === "win" ? " class='win'" : "") + "><td>" +
+          esc(RESULT_KO[e.result] || e.result) + "</td><td>" +
           esc(fmt(e.ts)) + "</td><td>" + esc(e.name || "") + "</td><td>" + esc(e.phone || "") + "</td></tr>";
       }).join("") + "</table>";
   }
 
   function exportCsv() {
     var log = loadLog();
-    var rows = [["등급","시각","이름","전화번호"]].concat(log.map(function (e) {
-      return [e.grade, e.ts || "", e.name || "", e.phone || ""];
+    var rows = [["결과","시각","이름","전화번호"]].concat(log.map(function (e) {
+      return [RESULT_KO[e.result] || e.result, e.ts || "", e.name || "", e.phone || ""];
     }));
     var csv = rows.map(function (r) {
       return r.map(function (c) { return '"' + String(c).replace(/"/g, '""') + '"'; }).join(",");
