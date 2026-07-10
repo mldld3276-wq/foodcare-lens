@@ -4,7 +4,7 @@
   "use strict";
 
   // 앱 버전 — 배포할 때마다 올린다. 폰에서 최신 버전이 로드됐는지 확인용.
-  var APP_VERSION = "1.2";
+  var APP_VERSION = "1.3";
 
   var $ = function (id) { return document.getElementById(id); };
   var screens = ["home", "camera", "progress", "manual", "result", "food", "diary", "apikey", "fail"];
@@ -187,11 +187,19 @@
       showFoodResult(lastFood);
     }).catch(function (err) {
       if (my !== jobId) return;
+      var code = err && err.message;
+      // 지속 오류(요청 형식 400·거부)는 폴백해도 계속 실패하므로 사유를 그대로 보여준다
+      if (code && code.indexOf("API_4") === 0) {
+        var m = "AI가 성분표 요청을 처리하지 못했어요 (원인: " + code + ").";
+        if (err.detail) m += "\n[상세: " + err.detail + "]";
+        showFail("label", m);
+        return;
+      }
       // 키 오류는 설정 문제라 계속 반복됨 — 조용히 폴백하면 사용자가 영영 모른다
-      if (err && err.message === "AUTH") {
+      if (code === "AUTH") {
         speak("API 키가 올바르지 않아 무료 인식으로 대신 읽어요. AI 설정에서 키를 확인해 주세요.");
       }
-      runLabelTesseract(canvas, my); // AI 실패(키 오류·네트워크 등) → 무료 OCR 폴백
+      runLabelTesseract(canvas, my); // 일시 오류(네트워크·서버 혼잡 등) → 무료 OCR 폴백
     });
   }
 
@@ -254,6 +262,7 @@
         PARSE: "분석 결과를 읽지 못했어요. 다시 찍어 주세요."
       }[err.message] ||
         "분석에 실패했어요 (원인: " + err.message + ").\n인터넷 연결을 확인하고 다시 시도해 주세요.";
+      if (err.detail) msg += "\n[상세: " + err.detail + "]"; // API가 알려준 실제 사유
       showFail("food", msg);
     });
   }
@@ -515,14 +524,18 @@
     captureMode = mode;
     if (mode === "food") {
       $("fail-title").textContent = "음식을 분석하지 못했어요";
-      $("fail-sub").innerHTML = (customMsg || "다시 찍어 주세요.").replace(/\n/g, "<br>");
+      $("fail-sub").innerHTML = esc(customMsg || "다시 찍어 주세요.").replace(/\n/g, "<br>");
       $("btn-fail-manual").style.display = "none";
       speak(customMsg || "음식을 분석하지 못했어요. 다시 찍어 주세요.");
     } else {
-      $("fail-title").textContent = "성분표를 찾지 못했어요";
-      $("fail-sub").innerHTML = "글씨가 잘 보이게 다시 찍거나,<br>당류 숫자를 직접 입력해 주세요.";
+      $("fail-title").textContent = "성분표를 읽지 못했어요";
+      $("fail-sub").innerHTML = (customMsg
+        ? esc(customMsg).replace(/\n/g, "<br>")
+        : "글씨가 잘 보이게 다시 찍거나,<br>당류 숫자를 직접 입력해 주세요.");
       $("btn-fail-manual").style.display = "";
-      speak("성분표에서 당류를 찾지 못했어요. 다시 찍거나 직접 입력해 주세요.");
+      speak(customMsg
+        ? customMsg
+        : "성분표에서 당류를 찾지 못했어요. 다시 찍거나 직접 입력해 주세요.");
     }
     show("fail");
   }

@@ -153,11 +153,20 @@
       throw err;
     }).then(function (resp) {
       if (timer) clearTimeout(timer);
-      if (resp.status === 401 || resp.status === 403) throw new Error("AUTH");
-      if (resp.status === 429) throw new Error("RATE");
-      if (resp.status >= 500) throw new Error("OVERLOADED"); // 500/503/529 — 서버 측 문제
-      if (!resp.ok) throw new Error("API_" + resp.status);
-      return resp.json();
+      if (resp.ok) return resp.json();
+      // 오류 응답 — API가 알려주는 실제 사유를 본문에서 뽑아 err.detail에 담는다
+      return resp.text().then(function (body) {
+        var detail = "";
+        try { detail = (JSON.parse(body).error || {}).message || ""; } catch (e) { detail = ""; }
+        if (!detail) detail = (body || "").slice(0, 200);
+        var code = resp.status === 401 || resp.status === 403 ? "AUTH"
+          : resp.status === 429 ? "RATE"
+          : resp.status >= 500 ? "OVERLOADED"
+          : "API_" + resp.status;
+        var err = new Error(code);
+        err.detail = detail;
+        throw err;
+      });
     }).then(function (data) {
       if (data.stop_reason === "refusal") throw new Error("REFUSED");
       var textBlock = (data.content || []).filter(function (b) { return b.type === "text"; })[0];
