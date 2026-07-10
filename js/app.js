@@ -4,7 +4,7 @@
   "use strict";
 
   // 앱 버전 — 배포할 때마다 올린다. 폰에서 최신 버전이 로드됐는지 확인용.
-  var APP_VERSION = "2.2";
+  var APP_VERSION = "2.3";
 
   var $ = function (id) { return document.getElementById(id); };
   var screens = ["home", "camera", "progress", "manual", "result", "food", "diary",
@@ -184,6 +184,7 @@
       sodium_mg: label.sodium_mg == null ? undefined : label.sodium_mg,
       protein_g: label.protein_g == null ? undefined : label.protein_g,
       fat_g: label.fat_g == null ? undefined : label.fat_g,
+      caffeine_mg: label.caffeine_mg == null ? undefined : label.caffeine_mg,
       purine_level: label.purine_level,
       health_note: label.health_note || "",
       portion_advice: label.portion_advice || "",
@@ -357,12 +358,27 @@
       ["나트륨", cell(food.sodium_mg, "mg", true)],
       ["단백질", cell(food.protein_g, "g")],
       ["지방", cell(food.fat_g, "g")],
+      ["카페인", cell(food.caffeine_mg, "mg", true)],
       ["퓨린(통풍)", purineKo]
     ];
     $("food-table").innerHTML = rows.map(function (r) {
       return "<tr><td>" + r[0] + "</td><td>" + r[1] + "</td></tr>";
     }).join("");
     $("food-note").textContent = food.health_note || "";
+
+    // 많이 드시면 주의 — 영양소별 과다 섭취 위험 (질환 유무와 무관한 건강 교육)
+    var nw = FoodAdvice.nutrientWarnings(food);
+    if (nw.warnings.length) {
+      $("food-warnings").innerHTML = "<div class='warn-title'>⚠️ 이 음식, 많이 드시면 주의하세요</div>" +
+        nw.warnings.map(function (w) {
+          var amt = w.amount == null ? "" : " (" + w.amount + w.unit + ")";
+          return "<div class='warn-row'><b>" + esc(w.name) + "</b>" + amt + " — " + esc(w.disease) + "</div>";
+        }).join("");
+      $("food-warnings").style.display = "";
+    } else {
+      $("food-warnings").innerHTML = "";
+      $("food-warnings").style.display = "none";
+    }
 
     selectMealChip(FoodDiary.guessMealType(new Date().getHours()));
     show("food");

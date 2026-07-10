@@ -72,5 +72,46 @@
     return { level: top, items: items, allFoods: allFoods, exercises: exercises };
   }
 
-  return { INFO: INFO, riskAdvice: riskAdvice };
+  // 영양소별 "많이 먹으면 생길 수 있는 병" — 질환과 무관하게 일반 건강 교육용.
+  // threshold = 1회 섭취 기준 '많음' 기준값(대략치).
+  var NUTRIENT_RISK = [
+    { key: "carbs_g",   name: "탄수화물", unit: "g",  threshold: 75,
+      disease: "많이 먹으면 살이 찌고 혈당이 올라 당뇨병 위험이 커져요" },
+    { key: "sugar_g",   name: "당류",     unit: "g",  threshold: 15,
+      disease: "많이 먹으면 당뇨병·충치·비만 위험이 커져요" },
+    { key: "sodium_mg", name: "나트륨",   unit: "mg", threshold: 800,
+      disease: "많이 먹으면 고혈압·심장병·신장 부담이 커져요" },
+    { key: "fat_g",     name: "지방",     unit: "g",  threshold: 22,
+      disease: "많이 먹으면 비만·고지혈증·심혈관질환 위험이 커져요" },
+    { key: "protein_g", name: "단백질",   unit: "g",  threshold: 40,
+      disease: "너무 많이 먹으면 신장에 부담이 될 수 있어요" },
+    { key: "caffeine_mg", name: "카페인", unit: "mg", threshold: 80,
+      disease: "많이 먹으면 잠이 안 오고 가슴이 두근거리거나 불안할 수 있어요" }
+  ];
+
+  /**
+   * 이 음식에 많이 든 영양소별 과다 섭취 경고 (순수 함수).
+   * 정상 음식이어도, 그 음식에서 두드러진 영양소의 위험을 교육적으로 알려준다.
+   * @param {object} food { carbs_g, sugar_g, sodium_mg, fat_g, protein_g, caffeine_mg, purine_level }
+   * @returns {object} { warnings:[{name, amount, unit, disease}], caffeine }
+   */
+  function nutrientWarnings(food) {
+    food = food || {};
+    var warnings = [];
+    NUTRIENT_RISK.forEach(function (n) {
+      var v = Number(food[n.key]);
+      if (!isNaN(v) && v >= n.threshold) {
+        warnings.push({ name: n.name, amount: Math.round(v * 10) / 10, unit: n.unit, disease: n.disease });
+      }
+    });
+    // 퓨린(통풍)은 등급으로 판단
+    if (food.purine_level === "high") {
+      warnings.push({ name: "퓨린", amount: null, unit: "",
+        disease: "많이 먹으면 요산이 쌓여 통풍 발작 위험이 커져요" });
+    }
+    return { warnings: warnings, caffeine: Number(food.caffeine_mg) || 0 };
+  }
+
+  return { INFO: INFO, riskAdvice: riskAdvice,
+    NUTRIENT_RISK: NUTRIENT_RISK, nutrientWarnings: nutrientWarnings };
 });

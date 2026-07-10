@@ -45,6 +45,9 @@
     </div>
     <div class="card">
       <h2 style="font-size:1.2rem; color:#B8860B; margin-bottom:8px;">🎉 경품 당첨자</h2>
+      <p class="muted" style="margin-bottom:10px;">여러 이용자의 당첨자는 구글 시트에 모입니다. 아래 버튼으로 전체 명단을 확인하세요.</p>
+      <button id="btn-sheet">📄 구글 시트에서 전체 당첨자 보기</button>
+      <h3 style="font-size:1rem; margin:14px 0 6px; color:#555;">이 기기에서 뽑은 당첨자</h3>
       <div id="winners"></div>
     </div>
     <div class="card">
@@ -62,6 +65,8 @@
 <script>
   // 관리자 비밀번호 — 배포 시 원하는 값으로 바꾸세요.
   var ADMIN_PW = "foodcare2026";
+  // 구글 폼을 연결한 구글 시트 주소(전체 당첨자). 폼 → 응답 → Sheets에 연결 후 그 시트 URL을 넣으세요.
+  var SHEET_URL = "";
 
   function esc(s) {
     return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
@@ -131,6 +136,13 @@
     if (e.key === "Enter") document.getElementById("btn-login").click();
   });
   document.getElementById("btn-export").addEventListener("click", exportCsv);
+  document.getElementById("btn-sheet").addEventListener("click", function () {
+    if (SHEET_URL) {
+      window.open(SHEET_URL, "_blank");
+    } else {
+      alert("아직 구글 시트가 연결되지 않았어요.\n\n구글 폼 → 응답 탭 → 'Sheets에 연결'로 시트를 만든 뒤,\n그 시트 주소를 admin.html의 SHEET_URL에 넣어 주세요.\n(운영자에게 요청하면 넣어드립니다)");
+    }
+  });
 </script>
 </body>
 </html>

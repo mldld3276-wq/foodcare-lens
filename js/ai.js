@@ -59,6 +59,7 @@
     "  \"sodium_mg\": 숫자(나트륨 mg, 없으면 -1),\n" +
     "  \"protein_g\": 숫자(단백질 g, 없으면 -1),\n" +
     "  \"fat_g\": 숫자(지방 g, 없으면 -1),\n" +
+    "  \"caffeine_mg\": 숫자(카페인 mg, 커피·차·에너지드링크·초콜릿 등. 없으면 -1),\n" +
     "  \"servings_per_pack\": 숫자(총 제공 횟수, 없으면 -1),\n" +
     "  \"purine_level\": \"low\" | \"medium\" | \"high\" | \"unknown\",\n" +
     "  \"health_note\": \"한 줄 조언(한국어, 60자 이내)\",\n" +
@@ -72,6 +73,7 @@
     "  \"confidence\": \"high\" | \"medium\" | \"low\",\n" +
     "  \"kcal\": 숫자, \"carbs_g\": 숫자, \"sugar_g\": 숫자, \"sodium_mg\": 숫자,\n" +
     "  \"protein_g\": 숫자, \"fat_g\": 숫자,\n" +
+    "  \"caffeine_mg\": 숫자(카페인 mg, 커피·차·에너지드링크·초콜릿 등. 없으면 0),\n" +
     "  \"purine_level\": \"low\" | \"medium\" | \"high\",\n" +
     "  \"health_note\": \"한 줄 조언(한국어, 60자 이내)\",\n" +
     "  \"portion_advice\": \"섭취량 조언(한국어, 40자 이내)\"\n" +
@@ -139,7 +141,7 @@
   function parseAiReply(text) {
     var obj = extractJson(text);
     if (!obj || typeof obj.food_name !== "string") return null;
-    ["kcal", "carbs_g", "sugar_g", "sodium_mg", "protein_g", "fat_g"].forEach(function (k) {
+    ["kcal", "carbs_g", "sugar_g", "sodium_mg", "protein_g", "fat_g", "caffeine_mg"].forEach(function (k) {
       var v = Number(obj[k]);
       obj[k] = (isNaN(v) || v < 0) ? 0 : Math.round(v * 10) / 10;
     });
@@ -155,7 +157,7 @@
     var obj = extractJson(text);
     if (!obj || typeof obj.food_name !== "string") return null;
     obj.is_label = obj.is_label === true;
-    ["kcal", "carbs_g", "sugar_g", "sodium_mg", "protein_g", "fat_g", "servings_per_pack"]
+    ["kcal", "carbs_g", "sugar_g", "sodium_mg", "protein_g", "fat_g", "caffeine_mg", "servings_per_pack"]
       .forEach(function (k) {
         if (obj[k] === null || obj[k] === undefined) { obj[k] = null; return; }
         var v = Number(obj[k]);

@@ -99,6 +99,13 @@
   table.nutri tr:last-child td { border-bottom: none; }
   table.nutri td:last-child { text-align: right; font-weight: bold; }
   #food-note { font-size: 1rem; color: #555; max-width: 440px; line-height: 1.5; }
+  /* 많이 드시면 주의 — 영양소별 과다 위험 */
+  .food-warnings { width: 100%; max-width: 440px; background: #FFF3E0; border: 2px solid #E67E22;
+    border-radius: 12px; padding: 12px 14px; text-align: left; }
+  .food-warnings:empty { display: none; }
+  .food-warnings .warn-title { font-weight: bold; color: #C0392B; margin-bottom: 6px; font-size: 1.02rem; }
+  .food-warnings .warn-row { font-size: 0.98rem; line-height: 1.5; margin-top: 4px; color: #6E3B0E; }
+  .food-warnings .warn-row b { color: #C0392B; }
 
   /* 식사 구분 칩 */
   .mealchips { display: flex; gap: 8px; }
@@ -325,6 +332,7 @@
   <div id="food-advice">🥄 절반만 드세요</div>
   <table class="nutri" id="food-table"></table>
   <p id="food-note"></p>
+  <div id="food-warnings" class="food-warnings"></div>
   <div class="card">
     <label>언제 드신 건가요?</label>
     <div class="mealchips" style="margin-top:10px; justify-content:center;">

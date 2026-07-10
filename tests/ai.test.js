@@ -77,6 +77,14 @@ test("AI 파싱: 순수 JSON", () => {
   assert.equal(r.sugar_g, 5);
 });
 
+test("AI 요청·파싱: 카페인 포함", () => {
+  assert.match(buildFoodRequest("X").messages[0].content[1].text, /caffeine_mg/);
+  const r = parseAiReply(JSON.stringify(Object.assign({}, GOOD, { caffeine_mg: 95 })));
+  assert.equal(r.caffeine_mg, 95);
+  // 누락 시 0으로 방어
+  assert.equal(parseAiReply(JSON.stringify(GOOD)).caffeine_mg, 0);
+});
+
 test("AI 파싱: 코드펜스로 감싼 JSON", () => {
   const r = parseAiReply("```json\n" + JSON.stringify(GOOD) + "\n```");
   assert.equal(r.food_name, "김치찌개");
