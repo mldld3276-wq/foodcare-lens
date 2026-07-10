@@ -3,6 +3,9 @@
 (function () {
   "use strict";
 
+  // 앱 버전 — 배포할 때마다 올린다. 폰에서 최신 버전이 로드됐는지 확인용.
+  var APP_VERSION = "1.1";
+
   var $ = function (id) { return document.getElementById(id); };
   var screens = ["home", "camera", "progress", "manual", "result", "food", "diary", "apikey", "fail"];
   var stream = null;
@@ -667,6 +670,7 @@
   }
 
   // ── 시작 ─────────────────────────────────────────────────────
+  if ($("app-version")) $("app-version").textContent = "버전 v" + APP_VERSION;
   saveProfile(profile); // 기본/마이그레이션 프로필을 저장해 두 번째 실행부터는 저장본 사용
   renderProfileChips();
   show("home");

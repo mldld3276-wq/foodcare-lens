@@ -3,18 +3,21 @@ const assert = require("node:assert");
 const { buildFoodRequest, parseAiReply, buildLabelRequest, parseLabelReply, MODEL }
   = require("../js/ai.js");
 
-test("AI 요청: 모델·구조화출력·이미지 블록 포함", () => {
+test("AI 요청: 모델·이미지 블록·프롬프트 JSON 지시 포함 (구조화출력 미사용)", () => {
   const req = buildFoodRequest("BASE64DATA");
   assert.equal(req.model, MODEL);
-  assert.equal(req.output_config.format.type, "json_schema");
-  assert.ok(req.output_config.format.schema.required.includes("sugar_g"));
-  assert.ok(req.output_config.format.schema.required.includes("purine_level"));
-  assert.ok(req.output_config.format.schema.required.includes("portion_advice"));
+  // 구조화 출력은 브라우저 직접 호출에서 400을 내므로 쓰지 않는다
+  assert.equal(req.output_config, undefined);
   const content = req.messages[0].content;
   assert.equal(content[0].type, "image");
   assert.equal(content[0].source.media_type, "image/jpeg");
   assert.equal(content[0].source.data, "BASE64DATA");
   assert.equal(content[1].type, "text");
+  // 프롬프트에 JSON 키가 명시돼야 모델이 형식을 맞춘다
+  assert.match(content[1].text, /sugar_g/);
+  assert.match(content[1].text, /purine_level/);
+  assert.match(content[1].text, /portion_advice/);
+  assert.match(content[1].text, /JSON/);
 });
 
 test("AI 요청: 선택 질환이 프롬프트에 반영", () => {
@@ -77,22 +80,19 @@ test("AI 파싱: JSON 아님 → null", () => {
 });
 
 // ── 성분표 AI 판독 ─────────────────────────────────────────────
-test("성분표 요청: 스키마·이미지·1회 제공량 환산 지시 포함", () => {
+test("성분표 요청: 이미지·1회 제공량 환산·JSON 지시 포함 (구조화출력 미사용)", () => {
   const req = buildLabelRequest("B64", ["hypertension"]);
   assert.equal(req.model, MODEL);
-  assert.equal(req.output_config.format.type, "json_schema");
-  const s = req.output_config.format.schema;
-  assert.ok(s.required.includes("is_label"));
-  assert.ok(s.required.includes("sodium_mg"));
-  // Anthropic 구조화 출력은 유니온 타입을 거부(400) → 단순 number + sentinel(-1)
-  assert.equal(s.properties.sugar_g.type, "number");
-  assert.doesNotMatch(JSON.stringify(s.properties.sugar_g.type), /null/);
-  assert.match(s.properties.sugar_g.description, /-1/);
+  assert.equal(req.output_config, undefined); // 400 방지 — 프롬프트 기반 JSON
   assert.equal(req.messages[0].content[0].type, "image");
   const prompt = req.messages[0].content[1].text;
   assert.match(prompt, /1회 제공량 기준/);
   assert.match(prompt, /환산/);
   assert.match(prompt, /고혈압 환자/);
+  // 프롬프트에 JSON 키와 sentinel(-1)이 명시돼야 한다
+  assert.match(prompt, /is_label/);
+  assert.match(prompt, /sodium_mg/);
+  assert.match(prompt, /없으면 -1/);
 });
 
 const LABEL = {

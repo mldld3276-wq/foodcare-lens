@@ -1,6 +1,6 @@
 /* 서비스워커 — 홈 화면 설치(PWA) + 오프라인 대비.
    개발 편의를 위해 네트워크 우선(항상 최신), 실패 시 캐시 사용. */
-var CACHE = "foodcare-v6";
+var CACHE = "foodcare-v7";
 var SHELL = [
   ".", "index.html", "manifest.webmanifest", "icon.svg",
   "js/judge.js", "js/parser.js", "js/ai.js", "js/diary.js", "js/app.js"

@@ -11,61 +11,59 @@
 
   var DISEASE_KO = { diabetes: "당뇨", hypertension: "고혈압", kidney: "신장질환", gout: "통풍" };
 
-  // 구조화 출력 스키마 — 응답이 반드시 이 JSON 형태로 오도록 강제
-  var FOOD_SCHEMA = {
-    type: "object",
-    properties: {
-      food_name: { type: "string", description: "음식 이름 (한국어)" },
-      confidence: { type: "string", enum: ["high", "medium", "low"], description: "인식 확신도" },
-      kcal: { type: "number", description: "사진 속 양 기준 열량 추정 (kcal)" },
-      carbs_g: { type: "number", description: "탄수화물 g" },
-      sugar_g: { type: "number", description: "당류 g" },
-      sodium_mg: { type: "number", description: "나트륨 mg" },
-      protein_g: { type: "number", description: "단백질 g" },
-      fat_g: { type: "number", description: "지방 g" },
-      purine_level: { type: "string", enum: ["low", "medium", "high"],
-        description: "퓨린 함량 등급 (통풍 관점: 내장·등푸른생선·진한 육수는 high)" },
-      health_note: { type: "string", description: "사용자 질환 관점 한 줄 조언 (한국어, 60자 이내)" },
-      portion_advice: { type: "string",
-        description: "얼마나 먹으면 좋을지 직관적 조언 (한국어, 40자 이내, 예: '절반만 드세요', '국물은 남기세요')" }
-    },
-    required: ["food_name", "confidence", "kcal", "carbs_g", "sugar_g", "sodium_mg",
-      "protein_g", "fat_g", "purine_level", "health_note", "portion_advice"],
-    additionalProperties: false
-  };
-
-  // 성분표 판독 스키마 — 표에 없는 항목은 -1 (0과 구분해야 오판정이 없다).
-  // Anthropic 구조화 출력은 ["number","null"] 유니온 타입을 거부(400)하므로 sentinel(-1) 사용.
-  var LABEL_SCHEMA = {
-    type: "object",
-    properties: {
-      is_label: { type: "boolean", description: "사진에 영양성분표가 보이는지" },
-      food_name: { type: "string", description: "제품명 (포장에서 읽기, 안 보이면 '포장 식품')" },
-      confidence: { type: "string", enum: ["high", "medium", "low"], description: "판독 확신도" },
-      kcal: { type: "number", description: "1회 제공량 기준 열량. 표에 없으면 -1" },
-      carbs_g: { type: "number", description: "탄수화물 g. 없으면 -1" },
-      sugar_g: { type: "number", description: "당류 g (1회 제공량 기준). 없으면 -1" },
-      sodium_mg: { type: "number", description: "나트륨 mg. 없으면 -1" },
-      protein_g: { type: "number", description: "단백질 g. 없으면 -1" },
-      fat_g: { type: "number", description: "지방 g. 없으면 -1" },
-      servings_per_pack: { type: "number", description: "총 제공 횟수 (예: '총 3회'). 없으면 -1" },
-      purine_level: { type: "string", enum: ["low", "medium", "high", "unknown"],
-        description: "제품 종류로 추정한 퓨린 등급 (통풍 관점). 제품 종류를 알 수 없으면 unknown" },
-      health_note: { type: "string", description: "사용자 질환 관점 한 줄 조언 (한국어, 60자 이내)" },
-      portion_advice: { type: "string", description: "섭취량 조언 (한국어, 40자 이내)" }
-    },
-    required: ["is_label", "food_name", "confidence", "kcal", "carbs_g", "sugar_g",
-      "sodium_mg", "protein_g", "fat_g", "servings_per_pack", "purine_level",
-      "health_note", "portion_advice"],
-    additionalProperties: false
-  };
-
   function whoLine(diseases) {
     var dList = (diseases || []).map(function (d) { return DISEASE_KO[d]; }).filter(Boolean);
     return dList.length
       ? "사용자는 " + dList.join("·") + " 환자입니다. health_note와 portion_advice는 이 질환 관점에서 작성하세요."
       : "사용자는 특별한 질환이 없는 일반 사용자입니다. health_note와 portion_advice는 일반적인 건강 관리 관점에서 작성하세요.";
   }
+
+  // 이미지 1장 + 텍스트 프롬프트로 된 표준 요청 본문.
+  // 구조화 출력(output_config.format)은 브라우저 직접 호출에서 형식 불일치로 400을 내므로
+  // 사용하지 않고, 프롬프트에서 JSON 형식을 지시한 뒤 파서가 방어적으로 추출한다.
+  function visionRequest(base64Jpeg, prompt) {
+    return {
+      model: MODEL,
+      max_tokens: 1500,
+      messages: [{
+        role: "user",
+        content: [
+          { type: "image", source: { type: "base64", media_type: "image/jpeg", data: base64Jpeg } },
+          { type: "text", text: prompt }
+        ]
+      }]
+    };
+  }
+
+  var LABEL_JSON_SPEC =
+    "\n\n반드시 아래 JSON 형식 하나만 출력하세요. 설명·인사·코드펜스 없이 JSON만:\n" +
+    "{\n" +
+    "  \"is_label\": true 또는 false (사진에 영양성분표가 보이는가),\n" +
+    "  \"food_name\": \"제품명(포장에서 읽고, 없으면 '포장 식품')\",\n" +
+    "  \"confidence\": \"high\" | \"medium\" | \"low\",\n" +
+    "  \"kcal\": 숫자(1회 제공량 기준 열량, 없으면 -1),\n" +
+    "  \"carbs_g\": 숫자(탄수화물 g, 없으면 -1),\n" +
+    "  \"sugar_g\": 숫자(당류 g, 없으면 -1),\n" +
+    "  \"sodium_mg\": 숫자(나트륨 mg, 없으면 -1),\n" +
+    "  \"protein_g\": 숫자(단백질 g, 없으면 -1),\n" +
+    "  \"fat_g\": 숫자(지방 g, 없으면 -1),\n" +
+    "  \"servings_per_pack\": 숫자(총 제공 횟수, 없으면 -1),\n" +
+    "  \"purine_level\": \"low\" | \"medium\" | \"high\" | \"unknown\",\n" +
+    "  \"health_note\": \"한 줄 조언(한국어, 60자 이내)\",\n" +
+    "  \"portion_advice\": \"섭취량 조언(한국어, 40자 이내)\"\n" +
+    "}";
+
+  var FOOD_JSON_SPEC =
+    "\n\n반드시 아래 JSON 형식 하나만 출력하세요. 설명·인사·코드펜스 없이 JSON만:\n" +
+    "{\n" +
+    "  \"food_name\": \"음식 이름(한국어)\",\n" +
+    "  \"confidence\": \"high\" | \"medium\" | \"low\",\n" +
+    "  \"kcal\": 숫자, \"carbs_g\": 숫자, \"sugar_g\": 숫자, \"sodium_mg\": 숫자,\n" +
+    "  \"protein_g\": 숫자, \"fat_g\": 숫자,\n" +
+    "  \"purine_level\": \"low\" | \"medium\" | \"high\",\n" +
+    "  \"health_note\": \"한 줄 조언(한국어, 60자 이내)\",\n" +
+    "  \"portion_advice\": \"섭취량 조언(한국어, 40자 이내)\"\n" +
+    "}";
 
   /** 성분표 사진 판독 요청 (순수 함수) */
   function buildLabelRequest(base64Jpeg, diseases) {
@@ -75,19 +73,8 @@
       "표에 없는 항목은 -1로 하세요. 0으로 적지 마세요. " +
       "제품 종류를 보고 퓨린 등급도 추정하되, 무슨 제품인지 알 수 없으면 unknown으로 하세요. " +
       whoLine(diseases) + " " +
-      "영양성분표가 보이지 않는 사진이면 is_label을 false로 하세요.";
-    return {
-      model: MODEL,
-      max_tokens: 1500,
-      output_config: { format: { type: "json_schema", schema: LABEL_SCHEMA } },
-      messages: [{
-        role: "user",
-        content: [
-          { type: "image", source: { type: "base64", media_type: "image/jpeg", data: base64Jpeg } },
-          { type: "text", text: prompt }
-        ]
-      }]
-    };
+      "영양성분표가 보이지 않는 사진이면 is_label을 false로 하세요." + LABEL_JSON_SPEC;
+    return visionRequest(base64Jpeg, prompt);
   }
 
   /** API 요청 본문 생성 (순수 함수). diseases: ["diabetes",...] — 조언 맞춤용 */
@@ -96,19 +83,9 @@
       "사진 속 음식이 무엇인지 알아보고, 사진에 보이는 양 기준 영양성분을 추정해 주세요. " +
       "모든 수치는 대략적인 추정치입니다. 음식이 여러 개면 전체 합으로 추정하세요. " +
       whoLine(diseases) + " " +
-      "음식이 아니거나 알아볼 수 없으면 food_name을 \"알 수 없음\", confidence를 \"low\"로 하고 수치는 0으로 하세요.";
-    return {
-      model: MODEL,
-      max_tokens: 1500,
-      output_config: { format: { type: "json_schema", schema: FOOD_SCHEMA } },
-      messages: [{
-        role: "user",
-        content: [
-          { type: "image", source: { type: "base64", media_type: "image/jpeg", data: base64Jpeg } },
-          { type: "text", text: prompt }
-        ]
-      }]
-    };
+      "음식이 아니거나 알아볼 수 없으면 food_name을 \"알 수 없음\", confidence를 \"low\"로 하고 수치는 0으로 하세요." +
+      FOOD_JSON_SPEC;
+    return visionRequest(base64Jpeg, prompt);
   }
 
   function extractJson(text) {
