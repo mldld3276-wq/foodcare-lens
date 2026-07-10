@@ -4,7 +4,7 @@
   "use strict";
 
   // 앱 버전 — 배포할 때마다 올린다. 폰에서 최신 버전이 로드됐는지 확인용.
-  var APP_VERSION = "1.7";
+  var APP_VERSION = "1.8";
 
   var $ = function (id) { return document.getElementById(id); };
   var screens = ["home", "camera", "progress", "manual", "result", "food", "diary", "apikey", "fail"];
@@ -463,10 +463,30 @@
     // 출석 도장 달력 + 연속 기록
     renderCalendar();
 
+    // 하루 총 칼로리 카드 (오늘 총 kcal / 권장 kcal + 진행 바)
+    if (entries.length) {
+      var ks = FoodDiary.kcalSummary(totals.kcal, profile);
+      $("diary-kcal").innerHTML =
+        "<div class='kcal-head'><span>🔥 하루 총 칼로리</span>" +
+        "<span class='big" + (ks.over ? " over" : "") + "'>" + ks.consumed.toLocaleString() + "</span></div>" +
+        "<div class='kcal-bar'><div class='kcal-fill" + (ks.over ? " over" : "") +
+        "' style='width:" + ks.barPct + "%'></div></div>" +
+        "<div style='text-align:right; font-size:0.9rem; color:#666; margin-top:4px;'>권장 " +
+        ks.target.toLocaleString() + " kcal 중 " + ks.pct + "%" +
+        (ks.over ? " · 권장을 넘었어요" : "") + "</div>";
+    } else {
+      $("diary-kcal").innerHTML = "";
+    }
+
     // 하루 권장 밥공기 안내 (개인 키/몸무게 기반)
     var guide = FoodDiary.bowlsGuide(totals.kcal, profile);
     $("diary-bowls").textContent = entries.length ? "🍚 " + guide.text : "";
     $("diary-bowls").style.display = entries.length ? "" : "none";
+
+    // 자녀 모드: 켜져 있으면 '이 날 기록 지우기' 버튼을 숨겨 실수 삭제 방지
+    $("btn-child-mode").classList.toggle("on", !!profile.childMode);
+    $("btn-child-mode").textContent = profile.childMode ? "👶 자녀 모드 (켜짐)" : "👶 자녀 모드";
+    $("btn-diary-clear").style.display = profile.childMode ? "none" : "";
 
     // 평가 배너
     var box = $("diary-eval");
@@ -735,7 +755,16 @@
     speak(diarySpeech(evalr));
   });
   $("btn-diary-add").addEventListener("click", startFoodMode);
+  $("btn-child-mode").addEventListener("click", function () {
+    profile.childMode = !profile.childMode;
+    saveProfile(profile);
+    renderDiary(diaryKey); // 삭제 버튼 표시/숨김 반영
+    speak(profile.childMode
+      ? "자녀 모드를 켰어요. 이제 기록을 지울 수 없어요."
+      : "자녀 모드를 껐어요.");
+  });
   $("btn-diary-clear").addEventListener("click", function () {
+    if (profile.childMode) return; // 자녀 모드에서는 삭제 불가 (버튼도 숨김)
     // 원탭 영구 삭제 방지 — 기록이 있을 때만, 한 번 확인 후 삭제
     if (!FoodDiary.entriesFor(diaryKey).length) { speak("지울 기록이 없어요."); return; }
     if (!window.confirm("이 날의 식사 기록을 모두 지울까요?\n지운 기록은 되돌릴 수 없어요.")) return;
@@ -777,6 +806,37 @@
   // ── PWA: 서비스워커 등록 (홈 화면 설치 지원) ──────────────────
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("sw.js").catch(function () { /* 미지원 환경 무시 */ });
+  }
+
+  // ── 방문·설치 통계 (GoatCounter — 쿠키 없음, 개인정보 최소, 익명) ──
+  // goatcounter.com 무료 가입 후 받은 코드를 GC_CODE에 넣으면 켜집니다.
+  // 예: 사이트를 "foodcarelens"로 만들면 GC_CODE = "foodcarelens".
+  // 코드가 비어 있으면 아무 요청도 보내지 않습니다.
+  var GC_CODE = "";
+  if (GC_CODE) {
+    var gcs = document.createElement("script");
+    gcs.async = true;
+    gcs.src = "//gc.zgo.at/count.js";
+    gcs.setAttribute("data-goatcounter", "https://" + GC_CODE + ".goatcounter.com/count");
+    document.head.appendChild(gcs);
+    // 홈 화면 설치(PWA 설치) 실제 횟수를 별도 이벤트로 집계
+    window.addEventListener("appinstalled", function () {
+      try {
+        if (window.goatcounter && window.goatcounter.count) {
+          window.goatcounter.count({ path: "pwa-install", title: "홈화면 설치", event: true });
+        }
+      } catch (e) { /* ignore */ }
+    });
+    // 이미 설치된 앱(전체화면)으로 실행 중이면 표시해 방문과 구분
+    try {
+      if (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) {
+        window.addEventListener("load", function () {
+          if (window.goatcounter && window.goatcounter.count) {
+            window.goatcounter.count({ path: "app-open", title: "앱 실행(설치됨)", event: true });
+          }
+        });
+      }
+    } catch (e) { /* ignore */ }
   }
 
   // ── 시작 ─────────────────────────────────────────────────────

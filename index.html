@@ -133,9 +133,24 @@
   .cal-cell .stamp { font-size: 1.1rem; line-height: 1; }
   .cal-cell.today { outline: 2px solid var(--accent); }
 
+  /* 하루 총 칼로리 카드 */
+  .kcal-card { width: 100%; max-width: 440px; background: #fff; border-radius: 12px;
+    padding: 12px 14px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
+  .kcal-card:empty { display: none; }
+  .kcal-head { display: flex; justify-content: space-between; align-items: baseline;
+    font-weight: bold; font-size: 1.1rem; }
+  .kcal-head .big { font-size: 1.5rem; color: var(--accent); }
+  .kcal-head .big.over { color: var(--red); }
+  .kcal-bar { height: 16px; background: #EEF3EF; border-radius: 8px; overflow: hidden; margin-top: 8px; }
+  .kcal-fill { height: 100%; background: var(--accent); border-radius: 8px; transition: width .3s; }
+  .kcal-fill.over { background: var(--red); }
+
   /* 하루 권장 밥공기 안내 */
   .bowls-guide { width: 100%; max-width: 440px; background: #FFF6E5; border-radius: 12px;
     padding: 12px 14px; font-size: 1.05rem; font-weight: bold; color: #7A5A00; text-align: center; }
+
+  /* 자녀 모드 켜짐 상태 버튼 강조 */
+  #btn-child-mode.on { background: var(--accent); color: #fff; }
 
   /* 위험 조언 박스 (합병증·위험 음식·운동) */
   #diary-risk:empty { display: none; }
@@ -321,11 +336,13 @@
     <span id="diary-date">오늘</span>
     <button id="btn-diary-next" aria-label="다음 날">▶</button>
   </div>
+  <div id="diary-kcal" class="kcal-card"></div>
   <div id="diary-bowls" class="bowls-guide"></div>
   <div id="diary-eval" class="good"></div>
   <div id="diary-risk"></div>
   <div id="diary-list"></div>
   <button id="btn-diary-speak" class="bigbtn">🔊 식단 평가 듣기</button>
+  <button id="btn-child-mode" class="bigbtn secondary small">👶 자녀 모드</button>
   <div class="btnrow">
     <button id="btn-diary-add" class="bigbtn secondary small">🍚 음식 추가</button>
     <button id="btn-diary-clear" class="bigbtn secondary small">이 날 기록 지우기</button>

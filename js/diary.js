@@ -69,6 +69,18 @@
       targetKcal: target, text: text };
   }
 
+  /** 하루 총 칼로리 vs 권장 요약 (순수 함수) */
+  function kcalSummary(consumedKcal, profile) {
+    var target = dailyKcalTarget(profile);
+    var consumed = Math.round(Number(consumedKcal) || 0);
+    var pct = target > 0 ? Math.round(consumed / target * 100) : 0;
+    return {
+      consumed: consumed, target: target, pct: pct, over: consumed > target,
+      barPct: Math.min(pct, 100),
+      text: consumed.toLocaleString() + " / " + target.toLocaleString() + " kcal (" + pct + "%)"
+    };
+  }
+
   /** 열량 → 밥공기 환산 (순수 함수). 0.5공기 단위 */
   function kcalToBowls(kcal) {
     var k = Number(kcal) || 0;
@@ -319,7 +331,7 @@
   return {
     sumNutrition: sumNutrition, evaluateDiet: evaluateDiet, DAILY: DAILY,
     kcalToBowls: kcalToBowls, guessMealType: guessMealType,
-    bmi: bmi, dailyKcalTarget: dailyKcalTarget, bowlsGuide: bowlsGuide,
+    bmi: bmi, dailyKcalTarget: dailyKcalTarget, bowlsGuide: bowlsGuide, kcalSummary: kcalSummary,
     monthGrid: monthGrid, streakCount: streakCount, monthStampCount: monthStampCount,
     MEAL_TYPES: MEAL_TYPES, MEAL_KO: MEAL_KO, MEAL_ICON: MEAL_ICON,
     dateToKey: dateToKey, todayKey: todayKey, addDaysKey: addDaysKey, weekSummary: weekSummary,

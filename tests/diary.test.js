@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert");
 const { sumNutrition, evaluateDiet, kcalToBowls, guessMealType, addDaysKey, weekSummary,
-  bmi, dailyKcalTarget, bowlsGuide, monthGrid, streakCount, monthStampCount }
+  bmi, dailyKcalTarget, bowlsGuide, kcalSummary, monthGrid, streakCount, monthStampCount }
   = require("../js/diary.js");
 
 const MEAL = (over) => Object.assign({
@@ -120,6 +120,18 @@ test("권장 열량: 키 기반 표준체중×30, 없으면 기본 2000", () => 
   const t = dailyKcalTarget({ height: 170 });
   assert.ok(t >= 1850 && t <= 2000);     // 표준체중 63.6kg×30 ≈ 1900
   assert.equal(t % 50, 0);               // 50 단위
+});
+test("하루 총 칼로리 요약: 소비/권장/퍼센트 + 초과 판정", () => {
+  const s = kcalSummary(950, { height: 170 }); // 권장 1900 → 50%
+  assert.equal(s.consumed, 950);
+  assert.equal(s.target, 1900);
+  assert.equal(s.pct, 50);
+  assert.equal(s.over, false);
+  assert.equal(s.barPct, 50);
+  const over = kcalSummary(2500, { height: 170 });
+  assert.equal(over.over, true);
+  assert.equal(over.barPct, 100); // 막대는 100%에서 멈춤
+  assert.ok(over.pct > 100);      // 숫자는 실제 퍼센트
 });
 test("밥공기 안내: 남은 공기 계산 + 초과 문구", () => {
   const g = bowlsGuide(900, { height: 170 }); // 권장 ~1900=약 6공기, 900=3공기
