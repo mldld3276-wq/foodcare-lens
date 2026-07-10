@@ -8,11 +8,12 @@
 
   var API_URL = "https://api.anthropic.com/v1/messages";
   var MODEL = "claude-opus-4-8";
-  // gemini-flash-latest = 항상 현재 권장 Flash 모델을 가리키는 안정 별칭.
-  // (특정 버전을 박으면 "신규 사용자에게 더 이상 제공 안 됨" 404가 나므로 별칭 사용)
-  var GEMINI_MODEL = "gemini-flash-latest";
-  var GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/" +
-    GEMINI_MODEL + ":generateContent";
+  // 무료 등급에서 인기 모델은 자주 503("high demand")이 나므로 여러 모델을 순서대로 시도한다.
+  // 앞쪽이 우선(정확도 높은 순), 붐비면 다음으로 폴백. 특정 버전 박기는 404 위험이 있어 지양.
+  var GEMINI_MODELS = ["gemini-3-flash-preview", "gemini-flash-lite-latest", "gemini-flash-latest"];
+  function geminiUrl(model) {
+    return "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent";
+  }
 
   /** API 키로 제공자 판별. Claude 키만 'sk-ant' 접두사가 고정이고,
       Google 키는 형식이 여러 가지(AIza, AQ. 등)라 sk-ant가 아니면 Gemini로 본다. */
@@ -221,9 +222,11 @@
     });
   }
 
-  /** 브라우저 전용: Gemini 비전 호출 → 응답 텍스트 */
-  function callGemini(base64Jpeg, prompt, apiKey) {
-    return fetchWithTimeout(GEMINI_URL + "?key=" + encodeURIComponent(apiKey), {
+  /** 브라우저 전용: Gemini 비전 호출 → 응답 텍스트.
+      모델이 붐비면(503/429) 목록의 다음 모델로 자동 폴백한다. */
+  function callGemini(base64Jpeg, prompt, apiKey, idx) {
+    idx = idx || 0;
+    return fetchWithTimeout(geminiUrl(GEMINI_MODELS[idx]) + "?key=" + encodeURIComponent(apiKey), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(buildGeminiRequest(base64Jpeg, prompt))
@@ -235,6 +238,13 @@
       var cand = ((data.candidates) || [])[0];
       if (cand && cand.finishReason === "SAFETY") throw new Error("REFUSED");
       return parseGeminiText(data);
+    }).catch(function (err) {
+      // 과부하·한도 초과 같은 일시 오류면 다음 모델로 재시도
+      var retriable = err && (err.message === "OVERLOADED" || err.message === "RATE");
+      if (retriable && idx + 1 < GEMINI_MODELS.length) {
+        return callGemini(base64Jpeg, prompt, apiKey, idx + 1);
+      }
+      throw err;
     });
   }
 
@@ -268,5 +278,5 @@
     buildGeminiRequest: buildGeminiRequest, parseGeminiText: parseGeminiText,
     detectProvider: detectProvider, foodPrompt: foodPrompt, labelPrompt: labelPrompt,
     analyzeFoodImage: analyzeFoodImage, analyzeLabelImage: analyzeLabelImage,
-    MODEL: MODEL, GEMINI_MODEL: GEMINI_MODEL };
+    MODEL: MODEL, GEMINI_MODELS: GEMINI_MODELS };
 });
