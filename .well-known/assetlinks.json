@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "io.github.mldld3276wq.foodcarelens",
+      "sha256_cert_fingerprints": [
+        "B8:2F:03:49:B8:49:8B:32:9C:CB:CD:09:C4:8A:3E:AE:7E:D0:A8:D4:FB:C4:CA:53:9D:C7:B2:C9:89:CB:F5:61"
+      ]
+    }
+  }
+]
