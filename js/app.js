@@ -4,7 +4,7 @@
   "use strict";
 
   // 앱 버전 — 배포할 때마다 올린다. 폰에서 최신 버전이 로드됐는지 확인용.
-  var APP_VERSION = "2.0";
+  var APP_VERSION = "2.1";
 
   var $ = function (id) { return document.getElementById(id); };
   var screens = ["home", "camera", "progress", "manual", "result", "food", "diary",
@@ -14,10 +14,10 @@
   // 아래 구글 폼 정보를 채우면 A 당첨 시 이름·전화번호를 구글 시트로도 전송한다.
   // (비워 두면 이 기기의 로컬 로그에만 저장 — /admin.html에서 확인)
   var GOOGLE_FORM = {
-    action: "",        // 예: https://docs.google.com/forms/d/e/FORM_ID/formResponse
-    nameField: "",     // 예: entry.111111
-    phoneField: "",    // 예: entry.222222
-    gradeField: ""     // 예: entry.333333
+    action: "https://docs.google.com/forms/d/e/1FAIpQLSd4rRp3C9awh_l-IJI3o6qTpS21IsxmVIA6yNg_evePACt9vg/formResponse",
+    nameField: "entry.788878539",    // 이름
+    phoneField: "entry.1952229078",  // 전화번호
+    gradeField: ""                   // (등급 칸은 폼에 없음)
   };
   var stream = null;
   var lastSpeech = "";
