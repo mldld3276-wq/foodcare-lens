@@ -8,15 +8,16 @@
 
   var API_URL = "https://api.anthropic.com/v1/messages";
   var MODEL = "claude-opus-4-8";
-  var GEMINI_MODEL = "gemini-2.5-flash"; // 무료 등급 있음, 비전+JSON 지원
+  // gemini-flash-latest = 항상 현재 권장 Flash 모델을 가리키는 안정 별칭.
+  // (특정 버전을 박으면 "신규 사용자에게 더 이상 제공 안 됨" 404가 나므로 별칭 사용)
+  var GEMINI_MODEL = "gemini-flash-latest";
   var GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/" +
     GEMINI_MODEL + ":generateContent";
 
-  /** API 키 접두사로 제공자 판별 */
+  /** API 키로 제공자 판별. Claude 키만 'sk-ant' 접두사가 고정이고,
+      Google 키는 형식이 여러 가지(AIza, AQ. 등)라 sk-ant가 아니면 Gemini로 본다. */
   function detectProvider(apiKey) {
-    var k = apiKey || "";
-    if (k.indexOf("AIza") === 0) return "gemini";  // Google API 키
-    return "claude";                                // sk-ant... (기본)
+    return (apiKey || "").indexOf("sk-ant") === 0 ? "claude" : "gemini";
   }
 
   var DISEASE_KO = { diabetes: "당뇨", hypertension: "고혈압", kidney: "신장질환", gout: "통풍" };

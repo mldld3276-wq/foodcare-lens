@@ -4,12 +4,12 @@ const { buildFoodRequest, parseAiReply, buildLabelRequest, parseLabelReply,
   buildGeminiRequest, parseGeminiText, detectProvider, foodPrompt, labelPrompt, MODEL }
   = require("../js/ai.js");
 
-// ── 제공자 자동 감지 (키 접두사) ───────────────────────────────
-test("제공자 감지: AIza→gemini, sk-ant→claude, 빈 값→claude", () => {
-  assert.equal(detectProvider("AIzaSyABC123"), "gemini");
+// ── 제공자 자동 감지 (sk-ant만 Claude, 나머지는 Gemini) ────────
+test("제공자 감지: Claude는 sk-ant 접두사만, 나머지 Google 키 형식은 전부 Gemini", () => {
   assert.equal(detectProvider("sk-ant-api03-xyz"), "claude");
-  assert.equal(detectProvider(""), "claude");
-  assert.equal(detectProvider(null), "claude");
+  assert.equal(detectProvider("AIzaSyABC123"), "gemini");        // 기존 Google 키 형식
+  assert.equal(detectProvider("AQ.Ab8RN6LFSdR5hghBZ"), "gemini"); // 새 Google 키 형식
+  assert.equal(detectProvider(null), "gemini");
 });
 
 // ── Gemini 요청·응답 ───────────────────────────────────────────
