@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert");
-const { sumNutrition, evaluateDiet, kcalToBowls, guessMealType, addDaysKey, weekSummary }
+const { sumNutrition, evaluateDiet, kcalToBowls, guessMealType, addDaysKey, weekSummary,
+  bmi, dailyKcalTarget, bowlsGuide, monthGrid, streakCount, monthStampCount }
   = require("../js/diary.js");
 
 const MEAL = (over) => Object.assign({
@@ -103,6 +104,66 @@ test("평가(일반): 중증도는 한도에 적용하지 않음", () => {
   const r = evaluateDiet(sumNutrition([MEAL({ sugar_g: 30 })]), P([], "severe"));
   assert.equal(r.limits.sugarG, 50); // 50×0.5=25가 아니어야 함
   assert.equal(r.level, "good");
+});
+
+// ── 개인 맞춤 (키·몸무게) ─────────────────────────────────────
+test("BMI: 키·몸무게로 계산 + 아시아 기준 분류", () => {
+  assert.equal(bmi({ height: 170, weight: 64 }).value, 22.1);
+  assert.equal(bmi({ height: 170, weight: 64 }).category, "정상");
+  assert.equal(bmi({ height: 170, weight: 80 }).category, "비만");
+  assert.equal(bmi({ height: 160, weight: 45 }).category, "저체중");
+  assert.equal(bmi({}), null);           // 정보 없으면 null
+  assert.equal(bmi({ height: 170 }), null);
+});
+test("권장 열량: 키 기반 표준체중×30, 없으면 기본 2000", () => {
+  assert.equal(dailyKcalTarget({}), 2000);
+  const t = dailyKcalTarget({ height: 170 });
+  assert.ok(t >= 1850 && t <= 2000);     // 표준체중 63.6kg×30 ≈ 1900
+  assert.equal(t % 50, 0);               // 50 단위
+});
+test("밥공기 안내: 남은 공기 계산 + 초과 문구", () => {
+  const g = bowlsGuide(900, { height: 170 }); // 권장 ~1900=약 6공기, 900=3공기
+  assert.ok(g.remainingBowls > 0);
+  assert.match(g.text, /더 드셔도 돼요/);
+  const over = bowlsGuide(3000, { height: 170 });
+  assert.ok(over.remainingBowls < 0);
+  assert.match(over.text, /많이 드셨어요/);
+});
+test("평가: 개인 열량 초과 시 주의 + byDisease 제공", () => {
+  const small = { height: 150 }; // 표준 49.5kg×30≈1500 권장
+  const r = evaluateDiet(sumNutrition([MEAL({ kcal: 2000 })]), Object.assign({ diseases: [] }, small));
+  assert.equal(r.limits.kcal < 2000, true);
+  assert.ok(r.byDisease); // 질환별 위험도 맵
+});
+test("평가(당뇨): byDisease에 당뇨 위험 기록", () => {
+  const r = evaluateDiet(sumNutrition([MEAL({ sugar_g: 40 })]), P(["diabetes"]));
+  assert.equal(r.byDisease.diabetes, "risk");
+});
+
+// ── 출석 도장 달력 ────────────────────────────────────────────
+test("월 달력: 앞 빈칸 + 기록 있는 날 has=true", () => {
+  const all = { "2026-07-10": [MEAL()], "2026-07-15": [MEAL({ sugar_g: 40 })] };
+  const cells = monthGrid(all, 2026, 7, P(["diabetes"]));
+  const filled = cells.filter(Boolean);
+  assert.equal(filled.length, 31);                 // 7월은 31일
+  assert.equal(cells[0], null);                    // 2026-07-01은 수요일 → 앞에 빈칸 3개
+  const d10 = filled.find((c) => c.day === 10);
+  assert.equal(d10.has, true);
+  const d15 = filled.find((c) => c.day === 15);
+  assert.equal(d15.level, "risk");
+  const d11 = filled.find((c) => c.day === 11);
+  assert.equal(d11.has, false);
+});
+test("연속 기록: 끊기기 전까지 카운트", () => {
+  const all = { "2026-07-08": [MEAL()], "2026-07-09": [MEAL()], "2026-07-10": [MEAL()] };
+  assert.equal(streakCount(all, "2026-07-10"), 3);
+  assert.equal(streakCount(all, "2026-07-11"), 0); // 오늘 기록 없으면 0
+  const gap = { "2026-07-08": [MEAL()], "2026-07-10": [MEAL()] };
+  assert.equal(streakCount(gap, "2026-07-10"), 1); // 09 비어서 1
+});
+test("이번 달 도장 수", () => {
+  const all = { "2026-07-10": [MEAL()], "2026-07-15": [MEAL()], "2026-06-30": [MEAL()] };
+  assert.equal(monthStampCount(all, 2026, 7), 2);
 });
 
 // ── 밥공기 환산 ───────────────────────────────────────────────

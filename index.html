@@ -119,6 +119,38 @@
     font-size: 0.85rem; color: #777; border: 2px solid transparent; cursor: pointer; font-family: inherit; }
   .wday .dot { display: block; font-size: 1.05rem; }
   .wday.sel { border-color: var(--accent); font-weight: bold; }
+  /* 출석 도장 달력 */
+  .stamp-streak { width: 100%; max-width: 440px; text-align: center; font-size: 1.1rem;
+    font-weight: bold; color: var(--accent); }
+  .calendar { width: 100%; max-width: 440px; background: #fff; border-radius: 14px;
+    padding: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
+  .cal-title { text-align: center; font-weight: bold; font-size: 1.05rem; margin-bottom: 6px; }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+  .cal-dow { text-align: center; font-size: 0.8rem; color: #999; padding: 2px 0; }
+  .cal-cell { aspect-ratio: 1; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; border-radius: 8px; font-size: 0.8rem; color: #bbb; }
+  .cal-cell.has { background: #E8F1EA; color: #333; font-weight: bold; }
+  .cal-cell .stamp { font-size: 1.1rem; line-height: 1; }
+  .cal-cell.today { outline: 2px solid var(--accent); }
+
+  /* 하루 권장 밥공기 안내 */
+  .bowls-guide { width: 100%; max-width: 440px; background: #FFF6E5; border-radius: 12px;
+    padding: 12px 14px; font-size: 1.05rem; font-weight: bold; color: #7A5A00; text-align: center; }
+
+  /* 위험 조언 박스 (합병증·위험 음식·운동) */
+  #diary-risk:empty { display: none; }
+  .risk-box { width: 100%; max-width: 440px; background: #FDECEA; border: 2px solid var(--red);
+    border-radius: 14px; padding: 14px 16px; text-align: left; }
+  .risk-box h3 { color: var(--red); font-size: 1.15rem; margin-bottom: 6px; }
+  .risk-box .risk-why { color: #7A1C12; font-size: 1rem; line-height: 1.5; margin-bottom: 8px; }
+  .risk-box .sec-label { font-weight: bold; font-size: 0.98rem; margin: 8px 0 4px; }
+  .risk-foods { display: flex; flex-wrap: wrap; gap: 6px; }
+  .risk-foods .food { background: var(--red); color: #fff; font-weight: bold;
+    padding: 5px 10px; border-radius: 999px; font-size: 0.95rem; }
+  .risk-ex { background: #E8F1EA; border-radius: 10px; padding: 9px 12px; margin-top: 4px;
+    font-size: 0.98rem; color: #14532d; }
+  .risk-ex b { color: var(--accent); }
+
   #diary-list { width: 100%; max-width: 440px; text-align: left; }
   .meal-group { font-size: 1.02rem; font-weight: bold; color: var(--accent); padding: 10px 4px 2px; }
   .meal-row { display: flex; justify-content: space-between; gap: 8px; align-items: center;
@@ -185,6 +217,19 @@
         <option value="severe">중증</option>
       </select>
     </div>
+  </div>
+
+  <div class="card">
+    <label>내 몸 정보 (선택 — 넣으면 하루 권장량이 정확해져요)</label>
+    <div class="row" style="margin-top:10px; gap:14px;">
+      <span>키
+        <input id="in-height" type="number" inputmode="numeric" min="100" max="230"
+          placeholder="170" aria-label="키(센티미터)" style="width:70px;"> cm</span>
+      <span>몸무게
+        <input id="in-weight" type="number" inputmode="numeric" min="20" max="200"
+          placeholder="65" aria-label="몸무게(킬로그램)" style="width:70px;"> kg</span>
+    </div>
+    <p id="bmi-line" class="disclaimer" style="margin-top:8px; min-height:1.2em;"></p>
   </div>
 
   <button id="btn-food" class="bigbtn">🍚 음식 사진 AI 분석</button>
@@ -269,13 +314,16 @@
 <!-- 식단표 (누적) -->
 <section id="screen-diary" class="screen">
   <h1>📒 식단 기록</h1>
-  <div class="weekstrip" id="diary-week"></div>
+  <div id="streak-line" class="stamp-streak"></div>
+  <div id="diary-calendar" class="calendar"></div>
   <div class="diary-nav">
     <button id="btn-diary-prev" aria-label="이전 날">◀</button>
     <span id="diary-date">오늘</span>
     <button id="btn-diary-next" aria-label="다음 날">▶</button>
   </div>
+  <div id="diary-bowls" class="bowls-guide"></div>
   <div id="diary-eval" class="good"></div>
+  <div id="diary-risk"></div>
   <div id="diary-list"></div>
   <button id="btn-diary-speak" class="bigbtn">🔊 식단 평가 듣기</button>
   <div class="btnrow">
@@ -319,6 +367,7 @@
 <script src="js/parser.js"></script>
 <script src="js/ai.js"></script>
 <script src="js/diary.js"></script>
+<script src="js/advice.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

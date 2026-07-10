@@ -4,7 +4,7 @@
   "use strict";
 
   // 앱 버전 — 배포할 때마다 올린다. 폰에서 최신 버전이 로드됐는지 확인용.
-  var APP_VERSION = "1.6";
+  var APP_VERSION = "1.7";
 
   var $ = function (id) { return document.getElementById(id); };
   var screens = ["home", "camera", "progress", "manual", "result", "food", "diary", "apikey", "fail"];
@@ -49,6 +49,21 @@
     $("severity").value = profile.severity;
     // 질환이 없으면 '정도'는 판정에 쓰이지 않으므로 비활성화 (혼란 방지)
     $("severity").disabled = profile.diseases.length === 0;
+    if (profile.height) $("in-height").value = profile.height;
+    if (profile.weight) $("in-weight").value = profile.weight;
+    renderBmi();
+  }
+
+  function renderBmi() {
+    var b = FoodDiary.bmi(profile);
+    var el = $("bmi-line");
+    if (!el) return;
+    if (b) {
+      var kcal = FoodDiary.dailyKcalTarget(profile);
+      el.textContent = "BMI " + b.value + " (" + b.category + ") · 하루 권장 약 " + kcal + "kcal";
+    } else {
+      el.textContent = "";
+    }
   }
 
   // ── 음성 + 자막 — 모든 안내는 소리와 글로 동시에 ─────────────
@@ -374,7 +389,66 @@
     speak(speech);
   }
 
-  // ── 식단표 (누적, 날짜 이동, 주간 요약) ──────────────────────
+  // 보고 있는 달 (달력) — diaryKey에서 파생
+  function renderCalendar() {
+    var all = FoodDiary.loadAll();
+    var todayK = FoodDiary.todayKey();
+    var p = diaryKey.split("-").map(Number);
+    var year = p[0], month = p[1];
+    var cells = FoodDiary.monthGrid(all, year, month, profile);
+    var stampColor = { good: "🟢", caution: "🟡", risk: "🔴", none: "" };
+
+    var streak = FoodDiary.streakCount(all, todayK);
+    var stamps = FoodDiary.monthStampCount(all, year, month);
+    $("streak-line").textContent = (streak > 0 ? "🔥 " + streak + "일 연속 기록 중! " : "") +
+      "이번 달 도장 " + stamps + "개";
+
+    var dows = ["일", "월", "화", "수", "목", "금", "토"];
+    var html = "<div class='cal-title'>" + year + "년 " + month + "월</div><div class='cal-grid'>";
+    html += dows.map(function (d) { return "<div class='cal-dow'>" + d + "</div>"; }).join("");
+    html += cells.map(function (c) {
+      if (!c) return "<div class='cal-cell'></div>";
+      var cls = "cal-cell" + (c.has ? " has" : "") + (c.key === todayK ? " today" : "");
+      var stamp = c.has ? "<span class='stamp'>" + (stampColor[c.level] || "✅") + "</span>" : "";
+      return "<button class='" + cls + "' data-key='" + c.key + "'>" + c.day + stamp + "</button>";
+    }).join("");
+    html += "</div>";
+    $("diary-calendar").innerHTML = html;
+
+    [].forEach.call(document.querySelectorAll(".cal-cell[data-key]"), function (btn) {
+      btn.addEventListener("click", function () { renderDiary(btn.dataset.key); });
+    });
+  }
+
+  // 위험일 때 음성에 합병증·운동 추천을 덧붙인다 (음성 우선 접근성)
+  function diarySpeech(evalr) {
+    var advice = FoodAdvice.riskAdvice(evalr.byDisease, "risk");
+    if (!advice.items.length) return evalr.speech;
+    var it = advice.items[0];
+    return evalr.speech + " " + it.risk + ". " + it.exercise + "를 추천해요.";
+  }
+
+  function renderRiskAdvice(evalr) {
+    var box = $("diary-risk");
+    // 위험(risk)일 때만 — 주의는 평가 배너로 충분
+    var advice = FoodAdvice.riskAdvice(evalr.byDisease, "risk");
+    if (!advice.items.length) { box.innerHTML = ""; return; }
+
+    var whys = advice.items.map(function (it) {
+      return "<div class='risk-why'>⚠️ [" + esc(it.name) + "] " + esc(it.risk) + "</div>";
+    }).join("");
+    var foods = "<div class='sec-label'>🚫 이런 음식은 특히 조심하세요</div><div class='risk-foods'>" +
+      advice.allFoods.map(function (f) { return "<span class='food'>" + esc(f) + "</span>"; }).join("") +
+      "</div>";
+    var ex = "<div class='sec-label'>🏃 원인을 없애는 데 좋은 운동</div>" +
+      advice.exercises.map(function (e) {
+        return "<div class='risk-ex'><b>" + esc(e.name) + "</b> — " + esc(e.exercise) + "</div>";
+      }).join("");
+    box.innerHTML = "<div class='risk-box'><h3>🔴 이대로 계속 드시면 위험해요</h3>" +
+      whys + foods + ex + "</div>";
+  }
+
+  // ── 식단표 (누적, 날짜 이동, 달력·권장량·위험조언) ────────────
   function renderDiary(key) {
     diaryKey = key || diaryKey;
     var todayK = FoodDiary.todayKey();
@@ -386,23 +460,23 @@
     $("diary-date").textContent = dateLabel;
     $("btn-diary-next").disabled = diaryKey >= todayK;
 
-    // 주간 요약 스트립
-    var week = FoodDiary.weekSummary(FoodDiary.loadAll(), todayK, profile);
-    var dot = { good: "🟢", caution: "🟡", risk: "🔴", none: "⚪" };
-    $("diary-week").innerHTML = week.map(function (d) {
-      return "<button class='wday" + (d.key === diaryKey ? " sel" : "") + "' data-key='" + d.key + "'>" +
-        d.weekday + "<span class='dot'>" + dot[d.level] + "</span></button>";
-    }).join("");
-    [].forEach.call(document.querySelectorAll(".wday"), function (btn) {
-      btn.addEventListener("click", function () { renderDiary(btn.dataset.key); });
-    });
+    // 출석 도장 달력 + 연속 기록
+    renderCalendar();
+
+    // 하루 권장 밥공기 안내 (개인 키/몸무게 기반)
+    var guide = FoodDiary.bowlsGuide(totals.kcal, profile);
+    $("diary-bowls").textContent = entries.length ? "🍚 " + guide.text : "";
+    $("diary-bowls").style.display = entries.length ? "" : "none";
 
     // 평가 배너
     var box = $("diary-eval");
     box.className = evalr.level;
     box.innerHTML = "<h2>" + ({ good: "🟢", caution: "🟡", risk: "🔴" }[evalr.level]) + " " +
       evalr.label + "</h2><ul>" +
-      evalr.reasons.map(function (r) { return "<li>" + r + "</li>"; }).join("") + "</ul>";
+      evalr.reasons.map(function (r) { return "<li>" + esc(r) + "</li>"; }).join("") + "</ul>";
+
+    // 위험 조언 — 위험 질환의 합병증 + 위험 음식(빨강) + 추천 운동
+    renderRiskAdvice(evalr);
 
     // 식사 구분별 그룹 목록
     if (entries.length === 0) {
@@ -577,12 +651,23 @@
     profile.severity = $("severity").value;
     saveProfile(profile);
   });
+  // 키·몸무게 입력 → 프로필 저장 + BMI/권장열량 갱신
+  function onBodyInput() {
+    var h = parseInt($("in-height").value, 10);
+    var w = parseInt($("in-weight").value, 10);
+    profile.height = (h >= 100 && h <= 230) ? h : undefined;
+    profile.weight = (w >= 20 && w <= 200) ? w : undefined;
+    saveProfile(profile);
+    renderBmi();
+  }
+  $("in-height").addEventListener("input", onBodyInput);
+  $("in-weight").addEventListener("input", onBodyInput);
 
   $("btn-scan").addEventListener("click", function () { startCamera("label"); });
   $("btn-food").addEventListener("click", startFoodMode);
   $("btn-diary").addEventListener("click", function () {
     var evalr = renderDiary(FoodDiary.todayKey());
-    speak(evalr.speech);
+    speak(diarySpeech(evalr));
   });
   $("btn-manual").addEventListener("click", function () {
     show("manual");
@@ -629,7 +714,7 @@
     var ok = FoodDiary.saveMeal(entry);
     if (ok) {
       var evalr = renderDiary(FoodDiary.todayKey());
-      speak(FoodDiary.MEAL_KO[selectedMeal] + "으로 기록했어요. " + evalr.speech);
+      speak(FoodDiary.MEAL_KO[selectedMeal] + "으로 기록했어요. " + diarySpeech(evalr));
     } else {
       speak("기록에 실패했어요.");
     }
@@ -647,7 +732,7 @@
   });
   $("btn-diary-speak").addEventListener("click", function () {
     var evalr = FoodDiary.evaluateDiet(FoodDiary.sumNutrition(FoodDiary.entriesFor(diaryKey)), profile);
-    speak(evalr.speech);
+    speak(diarySpeech(evalr));
   });
   $("btn-diary-add").addEventListener("click", startFoodMode);
   $("btn-diary-clear").addEventListener("click", function () {

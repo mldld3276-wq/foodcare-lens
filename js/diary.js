@@ -29,6 +29,46 @@
     return "snack";
   }
 
+  function fmtBowl(b) { return (b === Math.floor(b)) ? String(b) : b.toFixed(1); }
+
+  /** BMI 계산 (순수 함수). height(cm)·weight(kg) 없으면 null. 아시아 기준 분류 */
+  function bmi(profile) {
+    var h = Number(profile && profile.height), w = Number(profile && profile.weight);
+    if (!h || !w || h < 50 || w < 10) return null;
+    var m = h / 100;
+    var v = w / (m * m);
+    var cat = v < 18.5 ? "저체중" : v < 23 ? "정상" : v < 25 ? "과체중" : "비만";
+    return { value: Math.round(v * 10) / 10, category: cat };
+  }
+
+  /** 하루 권장 열량 (순수 함수). 키 기반 표준체중×30, 정보 없으면 기본 2000 */
+  function dailyKcalTarget(profile) {
+    var h = Number(profile && profile.height);
+    if (!h || h < 50) return DAILY.kcal;
+    var m = h / 100;
+    var std = 22 * m * m;                     // 표준 체중(kg) — 건강 체중으로 유도
+    return Math.round(std * 30 / 50) * 50;     // 유지 열량, 50kcal 단위 반올림
+  }
+
+  /** 오늘 먹은 열량 vs 하루 권장 → 밥공기 안내 (순수 함수) */
+  function bowlsGuide(consumedKcal, profile) {
+    var target = dailyKcalTarget(profile);
+    var targetBowls = Math.round(target / KCAL_PER_BOWL * 2) / 2;
+    var consumedBowls = Math.round((Number(consumedKcal) || 0) / KCAL_PER_BOWL * 2) / 2;
+    var remain = Math.round((targetBowls - consumedBowls) * 2) / 2;
+    var text;
+    if (remain > 0) {
+      text = "하루 권장 약 " + fmtBowl(targetBowls) + "공기 중 " + fmtBowl(consumedBowls) +
+        "공기 드셨어요. " + fmtBowl(remain) + "공기 더 드셔도 돼요.";
+    } else if (remain === 0) {
+      text = "하루 권장 " + fmtBowl(targetBowls) + "공기를 딱 맞게 드셨어요.";
+    } else {
+      text = "권장(" + fmtBowl(targetBowls) + "공기)보다 " + fmtBowl(-remain) + "공기 많이 드셨어요.";
+    }
+    return { targetBowls: targetBowls, consumedBowls: consumedBowls, remainingBowls: remain,
+      targetKcal: target, text: text };
+  }
+
   /** 열량 → 밥공기 환산 (순수 함수). 0.5공기 단위 */
   function kcalToBowls(kcal) {
     var k = Number(kcal) || 0;
@@ -76,63 +116,81 @@
     var diseases = profile.diseases || [];
     var isGeneral = diseases.length === 0; // 질환 미선택 = 일반 건강 모드
     var f = isGeneral ? 1.0 : (SEVERITY_FACTOR[profile.severity] || 1.0);
+    var kcalTarget = dailyKcalTarget(profile);
     var limits = {
       sugarG: Math.round((isGeneral ? DAILY.generalSugarG : DAILY.sugarG * f) * 10) / 10,
       sodiumMg: Math.round(DAILY.sodiumMg * f),
       kidneySodiumMg: Math.round(DAILY.kidneySodiumMg * f),
-      kcal: DAILY.kcal
+      kcal: kcalTarget
     };
     var reasons = [];
     var level = "good";
-    function bump(to) { if (to === "risk" || (to === "caution" && level === "good")) level = to; }
+    var byDisease = {}; // 질환별 최고 위험도 — 위험 조언·운동 추천에 사용
+    var ORDER = { good: 0, caution: 1, risk: 2 };
+    function bump(to) { if (ORDER[to] > ORDER[level]) level = to; }
+    function setDisease(key, lvl) {
+      if (!byDisease[key] || ORDER[lvl] > ORDER[byDisease[key]]) byDisease[key] = lvl;
+    }
     function ratioCheck(value, limit, unit, nameKo) {
+      var lvl;
       if (value > limit) {
-        bump("risk");
+        lvl = "risk";
         reasons.push(nameKo + " " + value + unit + " — 하루 권장 " + limit + unit + " 초과");
       } else if (value > limit * 0.7) {
-        bump("caution");
+        lvl = "caution";
         reasons.push(nameKo + " " + value + unit + " — 하루 권장의 70%를 넘었어요");
       } else {
+        lvl = "good";
         reasons.push(nameKo + " " + value + unit + " / " + limit + unit + " — 양호");
       }
+      bump(lvl);
+      return lvl;
     }
 
     if (totals.count === 0) {
       return { level: "good", label: "기록 없음", reasons: ["오늘 기록된 식사가 없습니다."],
-        speech: "오늘 기록된 식사가 아직 없어요.", limits: limits };
+        speech: "오늘 기록된 식사가 아직 없어요.", limits: limits, byDisease: byDisease };
     }
 
     if (isGeneral) {
-      ratioCheck(totals.sugar_g, DAILY.generalSugarG, "g", "[일반] 당류");
-      ratioCheck(Math.round(totals.sodium_mg), DAILY.sodiumMg, "mg", "[일반] 나트륨");
+      var gs = ratioCheck(totals.sugar_g, DAILY.generalSugarG, "g", "[일반] 당류");
+      var gn = ratioCheck(Math.round(totals.sodium_mg), DAILY.sodiumMg, "mg", "[일반] 나트륨");
+      setDisease("general", ORDER[gs] >= ORDER[gn] ? gs : gn);
     }
     if (diseases.indexOf("diabetes") !== -1) {
-      ratioCheck(totals.sugar_g, limits.sugarG, "g", "[당뇨] 당류");
+      setDisease("diabetes", ratioCheck(totals.sugar_g, limits.sugarG, "g", "[당뇨] 당류"));
     }
     if (diseases.indexOf("hypertension") !== -1) {
-      ratioCheck(Math.round(totals.sodium_mg), limits.sodiumMg, "mg", "[고혈압] 나트륨");
+      setDisease("hypertension", ratioCheck(Math.round(totals.sodium_mg), limits.sodiumMg, "mg", "[고혈압] 나트륨"));
     }
     if (diseases.indexOf("kidney") !== -1) {
-      ratioCheck(Math.round(totals.sodium_mg), limits.kidneySodiumMg, "mg", "[신장] 나트륨");
+      var kl = ratioCheck(Math.round(totals.sodium_mg), limits.kidneySodiumMg, "mg", "[신장] 나트륨");
       if (totals.protein_g > DAILY.kidneyProteinG) {
         bump("caution");
+        if (ORDER.caution > ORDER[kl]) kl = "caution";
         reasons.push("[신장] 단백질 " + totals.protein_g + "g — 하루 권장 " + DAILY.kidneyProteinG + "g 초과");
       }
+      setDisease("kidney", kl);
     }
     if (diseases.indexOf("gout") !== -1) {
+      var gl;
       if (totals.purineHigh >= 2) {
-        bump("risk");
+        gl = "risk";
         reasons.push("[통풍] 고퓨린 음식 " + totals.purineHigh + "회 — 발작 위험");
       } else if (totals.purineHigh === 1 || totals.purineMedium >= 2) {
-        bump("caution");
+        gl = "caution";
         reasons.push("[통풍] 퓨린 섭취 주의 (고퓨린 " + totals.purineHigh + "회, 중간 " + totals.purineMedium + "회)");
       } else {
+        gl = "good";
         reasons.push("[통풍] 퓨린 섭취 — 양호");
       }
+      bump(gl);
+      setDisease("gout", gl);
     }
-    if (totals.kcal > DAILY.kcal * 1.1) {
+    if (totals.kcal > kcalTarget * 1.1) {
       bump("caution");
-      reasons.push("열량 " + totals.kcal + "kcal — 하루 기준(" + DAILY.kcal + ")을 넘었어요");
+      setDisease("general", "caution");
+      reasons.push("열량 " + totals.kcal + "kcal — 하루 권장(" + kcalTarget + ")을 넘었어요");
     }
 
     // 성분표에 없어 '정보 없음'으로 기록된 항목 — 합산에서 0으로 둔갑해
@@ -162,7 +220,8 @@
       Math.round(totals.sodium_mg) + "밀리그램 드셨어요." +
       (hasUnknown ? " 일부 기록은 영양 정보가 없어 실제로는 더 많이 드셨을 수 있어요." : "") +
       " 추정치이므로 참고만 하세요.";
-    return { level: level, label: label, reasons: reasons, speech: speech, limits: limits };
+    return { level: level, label: label, reasons: reasons, speech: speech,
+      limits: limits, byDisease: byDisease };
   }
 
   // ── 날짜 유틸 (순수 함수) ─────────────────────────────────────
@@ -178,6 +237,41 @@
   function weekdayKo(key) {
     var p = key.split("-").map(Number);
     return ["일", "월", "화", "수", "목", "금", "토"][new Date(p[0], p[1] - 1, p[2]).getDay()];
+  }
+
+  /** 월 달력 (순수 함수): year·month(1-12)의 칸 배열. 빈 앞칸은 null.
+      기록 있는 날은 has=true + 평가 레벨 → 출석 도장 표시용 */
+  function monthGrid(allByDate, year, month, profile) {
+    var startDow = new Date(year, month - 1, 1).getDay();
+    var daysInMonth = new Date(year, month, 0).getDate();
+    var cells = [];
+    for (var i = 0; i < startDow; i++) cells.push(null);
+    for (var d = 1; d <= daysInMonth; d++) {
+      var key = year + "-" + pad2(month) + "-" + pad2(d);
+      var entries = allByDate[key] || [];
+      cells.push({
+        key: key, day: d, has: entries.length > 0,
+        level: entries.length ? evaluateDiet(sumNutrition(entries), profile).level : "none"
+      });
+    }
+    return cells;
+  }
+
+  /** 연속 기록 일수 (순수 함수): endKey부터 거슬러 기록이 끊기기 전까지 */
+  function streakCount(allByDate, endKey) {
+    var n = 0, key = endKey;
+    while (((allByDate[key] || []).length) > 0) { n++; key = addDaysKey(key, -1); }
+    return n;
+  }
+
+  /** 이번 달 기록한 날 수 (순수 함수) */
+  function monthStampCount(allByDate, year, month) {
+    var prefix = year + "-" + pad2(month) + "-";
+    var n = 0;
+    Object.keys(allByDate || {}).forEach(function (k) {
+      if (k.indexOf(prefix) === 0 && (allByDate[k] || []).length > 0) n++;
+    });
+    return n;
   }
 
   /** 주간 요약 (순수 함수): endKey 포함 최근 7일 [{key, weekday, count, level}] */
@@ -225,6 +319,8 @@
   return {
     sumNutrition: sumNutrition, evaluateDiet: evaluateDiet, DAILY: DAILY,
     kcalToBowls: kcalToBowls, guessMealType: guessMealType,
+    bmi: bmi, dailyKcalTarget: dailyKcalTarget, bowlsGuide: bowlsGuide,
+    monthGrid: monthGrid, streakCount: streakCount, monthStampCount: monthStampCount,
     MEAL_TYPES: MEAL_TYPES, MEAL_KO: MEAL_KO, MEAL_ICON: MEAL_ICON,
     dateToKey: dateToKey, todayKey: todayKey, addDaysKey: addDaysKey, weekSummary: weekSummary,
     loadAll: loadAll, saveMeal: saveMeal, entriesFor: entriesFor,
