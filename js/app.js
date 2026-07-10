@@ -4,7 +4,7 @@
   "use strict";
 
   // 앱 버전 — 배포할 때마다 올린다. 폰에서 최신 버전이 로드됐는지 확인용.
-  var APP_VERSION = "2.1";
+  var APP_VERSION = "2.2";
 
   var $ = function (id) { return document.getElementById(id); };
   var screens = ["home", "camera", "progress", "manual", "result", "food", "diary",
@@ -956,7 +956,7 @@
   // goatcounter.com 무료 가입 후 받은 코드를 GC_CODE에 넣으면 켜집니다.
   // 예: 사이트를 "foodcarelens"로 만들면 GC_CODE = "foodcarelens".
   // 코드가 비어 있으면 아무 요청도 보내지 않습니다.
-  var GC_CODE = "";
+  var GC_CODE = "minseo";
   if (GC_CODE) {
     var gcs = document.createElement("script");
     gcs.async = true;
