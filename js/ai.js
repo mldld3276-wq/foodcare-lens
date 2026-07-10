@@ -34,20 +34,21 @@
     additionalProperties: false
   };
 
-  // 성분표 판독 스키마 — 표에 없는 항목은 null (0과 구분해야 오판정이 없다)
+  // 성분표 판독 스키마 — 표에 없는 항목은 -1 (0과 구분해야 오판정이 없다).
+  // Anthropic 구조화 출력은 ["number","null"] 유니온 타입을 거부(400)하므로 sentinel(-1) 사용.
   var LABEL_SCHEMA = {
     type: "object",
     properties: {
       is_label: { type: "boolean", description: "사진에 영양성분표가 보이는지" },
       food_name: { type: "string", description: "제품명 (포장에서 읽기, 안 보이면 '포장 식품')" },
       confidence: { type: "string", enum: ["high", "medium", "low"], description: "판독 확신도" },
-      kcal: { type: ["number", "null"], description: "1회 제공량 기준 열량. 표에 없으면 null" },
-      carbs_g: { type: ["number", "null"], description: "탄수화물 g. 없으면 null" },
-      sugar_g: { type: ["number", "null"], description: "당류 g (1회 제공량 기준). 없으면 null" },
-      sodium_mg: { type: ["number", "null"], description: "나트륨 mg. 없으면 null" },
-      protein_g: { type: ["number", "null"], description: "단백질 g. 없으면 null" },
-      fat_g: { type: ["number", "null"], description: "지방 g. 없으면 null" },
-      servings_per_pack: { type: ["number", "null"], description: "총 제공 횟수 (예: '총 3회'). 없으면 null" },
+      kcal: { type: "number", description: "1회 제공량 기준 열량. 표에 없으면 -1" },
+      carbs_g: { type: "number", description: "탄수화물 g. 없으면 -1" },
+      sugar_g: { type: "number", description: "당류 g (1회 제공량 기준). 없으면 -1" },
+      sodium_mg: { type: "number", description: "나트륨 mg. 없으면 -1" },
+      protein_g: { type: "number", description: "단백질 g. 없으면 -1" },
+      fat_g: { type: "number", description: "지방 g. 없으면 -1" },
+      servings_per_pack: { type: "number", description: "총 제공 횟수 (예: '총 3회'). 없으면 -1" },
       purine_level: { type: "string", enum: ["low", "medium", "high", "unknown"],
         description: "제품 종류로 추정한 퓨린 등급 (통풍 관점). 제품 종류를 알 수 없으면 unknown" },
       health_note: { type: "string", description: "사용자 질환 관점 한 줄 조언 (한국어, 60자 이내)" },
@@ -71,7 +72,7 @@
     var prompt =
       "사진 속 영양성분표를 읽어 주세요. 수치는 반드시 1회 제공량 기준으로 환산해 주세요 " +
       "(표가 100g 기준 또는 총 내용량 기준이면 1회 제공량으로 환산하고, 1회 제공량 정보가 없으면 표에 적힌 값을 그대로). " +
-      "표에 없는 항목은 null로 하세요. 0으로 적지 마세요. " +
+      "표에 없는 항목은 -1로 하세요. 0으로 적지 마세요. " +
       "제품 종류를 보고 퓨린 등급도 추정하되, 무슨 제품인지 알 수 없으면 unknown으로 하세요. " +
       whoLine(diseases) + " " +
       "영양성분표가 보이지 않는 사진이면 is_label을 false로 하세요.";
