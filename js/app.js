@@ -4,10 +4,21 @@
   "use strict";
 
   // 앱 버전 — 배포할 때마다 올린다. 폰에서 최신 버전이 로드됐는지 확인용.
-  var APP_VERSION = "1.8";
+  var APP_VERSION = "1.9";
 
   var $ = function (id) { return document.getElementById(id); };
-  var screens = ["home", "camera", "progress", "manual", "result", "food", "diary", "apikey", "fail"];
+  var screens = ["home", "camera", "progress", "manual", "result", "food", "diary",
+    "wheel", "winner", "apikey", "fail"];
+
+  // A등급 당첨자를 여러 이용자에게서 모으려면 중앙 저장소가 필요.
+  // 아래 구글 폼 정보를 채우면 A 당첨 시 이름·전화번호를 구글 시트로도 전송한다.
+  // (비워 두면 이 기기의 로컬 로그에만 저장 — /admin.html에서 확인)
+  var GOOGLE_FORM = {
+    action: "",        // 예: https://docs.google.com/forms/d/e/FORM_ID/formResponse
+    nameField: "",     // 예: entry.111111
+    phoneField: "",    // 예: entry.222222
+    gradeField: ""     // 예: entry.333333
+  };
   var stream = null;
   var lastSpeech = "";
   var captureMode = "label";          // "label" | "food"
@@ -528,6 +539,102 @@
     return evalr;
   }
 
+  // ── 행운 돌림판 (뽑기 가챠) ──────────────────────────────────
+  var spinning = false;
+  var lastGrade = null;
+  var wheelRotation = 0; // 누적 회전(도) — 매번 앞으로만 돌게
+
+  function buildWheel() {
+    var wheel = $("wheel");
+    var grades = FoodDraw.GRADES;
+    var seg = 360 / grades.length;
+    // 색 섹터 (conic-gradient, 12시부터 시계방향)
+    var stops = grades.map(function (g, i) {
+      return g.color + " " + (i * seg) + "deg " + ((i + 1) * seg) + "deg";
+    }).join(", ");
+    wheel.style.background = "conic-gradient(" + stops + ")";
+    // 등급 글자 라벨 (섹터 중심에 배치, 휠과 함께 회전)
+    var R = 95, C = 140;
+    wheel.innerHTML = grades.map(function (g, i) {
+      var mid = (i * seg + seg / 2) * Math.PI / 180;
+      var x = C + R * Math.sin(mid), y = C - R * Math.cos(mid);
+      return "<span class='wlabel' style='left:" + x + "px; top:" + y +
+        "px; transform:translate(-50%,-50%);'>" + g.grade + "</span>";
+    }).join("");
+    wheel.style.transform = "rotate(0deg)";
+  }
+
+  function updateSpinButton() {
+    var t = FoodDraw.getTickets();
+    $("wheel-tickets").textContent = "🎟️ 뽑기권 " + t + "장";
+    $("btn-spin").disabled = t <= 0 || spinning;
+    $("btn-spin").textContent = t > 0 ? "🎲 돌리기 (뽑기권 1장 사용)" : "뽑기권이 없어요";
+  }
+  function renderWheel() {
+    updateSpinButton();
+    $("wheel-result").innerHTML = ""; // 화면 진입 시에만 결과 초기화
+  }
+
+  function spin() {
+    if (spinning) return;
+    if (!FoodDraw.useTicket()) { speak("뽑기권이 없어요. 음식을 식단에 등록하면 뽑기권이 생겨요."); renderWheel(); return; }
+    spinning = true;
+    $("btn-spin").disabled = true;
+    $("wheel-result").innerHTML = "";
+    var g = FoodDraw.drawGrade(Math.random());
+    lastGrade = g;
+    // 목표 섹터 정렬 각도(0~360) + 여러 바퀴를 현재 회전에 '더해' 항상 앞으로 돌린다
+    var base = FoodDraw.angleForGrade(g.grade, 0);           // 360 - 섹터중심
+    var spins = 5 + Math.floor(Math.random() * 3);
+    var currentMod = ((wheelRotation % 360) + 360) % 360;
+    var delta = ((base - currentMod) + 360) % 360;
+    wheelRotation += spins * 360 + delta;
+    $("wheel").style.transform = "rotate(" + wheelRotation + "deg)";
+    speak("돌림판을 돌립니다.");
+    setTimeout(function () {
+      spinning = false;
+      FoodDraw.logDraw({ ts: new Date().toISOString(), grade: g.grade });
+      if (g.prize) {
+        $("wheel-result").innerHTML = "<span class='a'>🎉 " + g.label + "</span>";
+        speak("축하해요! A등급 경품에 당첨됐어요! 이름과 전화번호를 남겨 주세요.");
+        setTimeout(function () { show("winner"); $("win-name").focus(); }, 1200);
+      } else {
+        $("wheel-result").textContent = g.label + " 이 나왔어요";
+        speak(g.grade + "등급이 나왔어요. 다음 기회를 노려보세요.");
+        updateSpinButton(); // 결과는 유지하고 뽑기권·버튼만 갱신
+      }
+    }, 4700); // CSS transition(4.5s)보다 살짝 길게
+  }
+
+  /** A 당첨 정보 저장 — 로컬 로그의 마지막 A에 이름·전화 기록 + (설정 시) 구글 폼 전송 */
+  function submitWinner() {
+    var name = $("win-name").value.trim();
+    var phone = $("win-phone").value.trim();
+    if (!name || !phone) { speak("이름과 전화번호를 모두 입력해 주세요."); return; }
+    // 로컬 로그: 방금 기록한 A 항목에 이름·전화 채우기
+    try {
+      var log = FoodDraw.loadLog();
+      for (var i = log.length - 1; i >= 0; i--) {
+        if (log[i].grade === "A" && !log[i].name) { log[i].name = name; log[i].phone = phone; break; }
+      }
+      localStorage.setItem("fc_draw_log", JSON.stringify(log));
+    } catch (e) { /* ignore */ }
+    // 중앙 수집(선택): 구글 폼이 설정돼 있으면 시트로도 전송
+    if (GOOGLE_FORM.action && GOOGLE_FORM.nameField) {
+      try {
+        var body = new URLSearchParams();
+        body.append(GOOGLE_FORM.nameField, name);
+        if (GOOGLE_FORM.phoneField) body.append(GOOGLE_FORM.phoneField, phone);
+        if (GOOGLE_FORM.gradeField) body.append(GOOGLE_FORM.gradeField, "A");
+        fetch(GOOGLE_FORM.action, { method: "POST", mode: "no-cors", body: body });
+      } catch (e) { /* 전송 실패해도 로컬엔 남음 */ }
+    }
+    $("win-name").value = ""; $("win-phone").value = "";
+    speak("응모가 완료됐어요. 경품은 운영진이 확인 후 보내드립니다.");
+    show("home");
+    updateHome();
+  }
+
   // ── 성분표 신호등 결과 ───────────────────────────────────────
   function renderResultScreen(overall, detail, speech) {
     var emoji = { green: "🟢", yellow: "🟡", red: "🔴" }[overall];
@@ -641,6 +748,12 @@
     showJudgement(v, null, null);
   }
 
+  // 홈 화면의 돌림판 버튼에 현재 뽑기권 수 표시
+  function updateHome() {
+    var t = FoodDraw.getTickets();
+    $("btn-wheel").textContent = "🎡 행운 돌림판" + (t > 0 ? " (뽑기권 " + t + "장)" : "");
+  }
+
   // ── AI 키 확인 후 음식 모드 진입 ─────────────────────────────
   function startFoodMode() {
     if (!apiKey()) {
@@ -689,6 +802,21 @@
     var evalr = renderDiary(FoodDiary.todayKey());
     speak(diarySpeech(evalr));
   });
+  // 행운 돌림판
+  $("btn-wheel").addEventListener("click", function () {
+    renderWheel();
+    show("wheel");
+    var t = FoodDraw.getTickets();
+    speak(t > 0 ? "행운 돌림판이에요. 뽑기권 " + t + "장 있어요. 돌려보세요."
+      : "행운 돌림판이에요. 음식을 식단에 등록하면 뽑기권이 생겨요.");
+  });
+  $("btn-spin").addEventListener("click", spin);
+  $("btn-wheel-home").addEventListener("click", function () { show("home"); updateHome(); });
+  $("btn-win-submit").addEventListener("click", submitWinner);
+  $("btn-win-skip").addEventListener("click", function () {
+    speak("나중에 응모할 수 있어요.");
+    show("home"); updateHome();
+  });
   $("btn-manual").addEventListener("click", function () {
     show("manual");
     speak("성분표에 적힌 당류 숫자를 입력해 주세요.");
@@ -733,8 +861,11 @@
     var entry = Object.assign({}, lastFood, { mealType: selectedMeal });
     var ok = FoodDiary.saveMeal(entry);
     if (ok) {
+      var tickets = FoodDraw.addTicket(1); // 등록할 때마다 뽑기권 1장
+      updateHome();
       var evalr = renderDiary(FoodDiary.todayKey());
-      speak(FoodDiary.MEAL_KO[selectedMeal] + "으로 기록했어요. " + diarySpeech(evalr));
+      speak(FoodDiary.MEAL_KO[selectedMeal] + "으로 기록했어요. 뽑기권 1장을 받았어요! (총 " +
+        tickets + "장) " + diarySpeech(evalr));
     } else {
       speak("기록에 실패했어요.");
     }
@@ -756,12 +887,30 @@
   });
   $("btn-diary-add").addEventListener("click", startFoodMode);
   $("btn-child-mode").addEventListener("click", function () {
-    profile.childMode = !profile.childMode;
-    saveProfile(profile);
-    renderDiary(diaryKey); // 삭제 버튼 표시/숨김 반영
-    speak(profile.childMode
-      ? "자녀 모드를 켰어요. 이제 기록을 지울 수 없어요."
-      : "자녀 모드를 껐어요.");
+    if (!profile.childMode) {
+      // 켜기 — 비밀번호 설정(처음이면 새로 정함)
+      var pw = window.prompt("자녀 모드를 켭니다.\n끌 때 쓸 비밀번호를 정해 주세요 (숫자·문자):", "");
+      if (pw == null) return;         // 취소
+      pw = String(pw).trim();
+      if (pw.length < 2) { speak("비밀번호는 2자 이상으로 정해 주세요."); return; }
+      profile.childMode = true;
+      profile.childPassword = pw;
+      saveProfile(profile);
+      renderDiary(diaryKey);
+      speak("자녀 모드를 켰어요. 이제 비밀번호 없이는 기록을 지울 수 없어요.");
+    } else {
+      // 끄기 — 비밀번호 확인
+      var input = window.prompt("자녀 모드를 끄려면 비밀번호를 입력하세요:", "");
+      if (input == null) return;      // 취소
+      if (String(input).trim() !== profile.childPassword) {
+        speak("비밀번호가 틀렸어요. 자녀 모드를 유지합니다.");
+        return;
+      }
+      profile.childMode = false;
+      saveProfile(profile);
+      renderDiary(diaryKey);
+      speak("자녀 모드를 껐어요.");
+    }
   });
   $("btn-diary-clear").addEventListener("click", function () {
     if (profile.childMode) return; // 자녀 모드에서는 삭제 불가 (버튼도 숨김)
@@ -843,6 +992,8 @@
   if ($("app-version")) $("app-version").textContent = "버전 v" + APP_VERSION;
   saveProfile(profile); // 기본/마이그레이션 프로필을 저장해 두 번째 실행부터는 저장본 사용
   renderProfileChips();
+  buildWheel();
+  updateHome();
   show("home");
   firstRunDisclaimer();
 

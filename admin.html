@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>푸드케어 렌즈 · 관리자</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: "맑은 고딕", "Malgun Gothic", sans-serif; background: #F7FAF7; color: #111;
+    padding: 24px 16px; max-width: 720px; margin: 0 auto; line-height: 1.5; }
+  h1 { color: #1F6F3D; font-size: 1.6rem; margin-bottom: 6px; }
+  .sub { color: #555; margin-bottom: 18px; }
+  input[type=password] { font-size: 1.1rem; padding: 12px; width: 100%; max-width: 320px;
+    border: 2px solid #1F6F3D; border-radius: 10px; }
+  button { font-size: 1.05rem; padding: 12px 18px; border: none; border-radius: 10px;
+    background: #1F6F3D; color: #fff; font-weight: bold; cursor: pointer; font-family: inherit; margin-top: 10px; }
+  button.sec { background: #E8F1EA; color: #1F6F3D; }
+  .card { background: #fff; border-radius: 14px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    margin-top: 16px; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.98rem; }
+  th, td { padding: 9px 10px; border-bottom: 1px solid #EEF3EF; text-align: left; }
+  th { background: #E8F1EA; }
+  .win { background: #FDF6E3; }
+  .win td:first-child { font-weight: bold; color: #B8860B; }
+  .muted { color: #888; font-size: 0.9rem; }
+  .hidden { display: none; }
+  .stat { display: inline-block; background: #E8F1EA; border-radius: 999px; padding: 6px 14px;
+    margin: 4px 6px 4px 0; font-weight: bold; color: #1F6F3D; }
+</style>
+</head>
+<body>
+  <h1>🔐 푸드케어 렌즈 · 관리자</h1>
+  <p class="sub">A등급 경품 당첨자와 뽑기 로그를 확인하는 페이지입니다. (이 기기에 저장된 기록)</p>
+
+  <div id="gate" class="card">
+    <p style="margin-bottom:10px; font-weight:bold;">관리자 비밀번호를 입력하세요</p>
+    <input id="pw" type="password" placeholder="비밀번호" autocomplete="off">
+    <div><button id="btn-login">확인</button></div>
+    <p id="err" class="muted" style="color:#C0392B; margin-top:8px;"></p>
+  </div>
+
+  <div id="panel" class="hidden">
+    <div class="card">
+      <div id="stats"></div>
+    </div>
+    <div class="card">
+      <h2 style="font-size:1.2rem; color:#B8860B; margin-bottom:8px;">🎉 A등급 경품 당첨자</h2>
+      <div id="winners"></div>
+    </div>
+    <div class="card">
+      <h2 style="font-size:1.1rem; margin-bottom:8px;">전체 뽑기 로그</h2>
+      <div id="log"></div>
+      <button id="btn-export" class="sec">CSV로 내려받기</button>
+    </div>
+    <p class="muted" style="margin-top:14px;">
+      ⚠️ 이 페이지는 <b>이 기기(브라우저)에 저장된 기록</b>만 보여줍니다. 여러 이용자의 당첨을
+      한곳에서 모으려면 앱의 구글 폼 연동을 설정하세요(구글 시트에서 확인).
+      비밀번호는 소스 코드에 들어 있어 완전한 보안은 아니며, 실제 서비스에서는 서버 인증이 필요합니다.
+    </p>
+  </div>
+
+<script>
+  // 관리자 비밀번호 — 배포 시 원하는 값으로 바꾸세요.
+  var ADMIN_PW = "foodcare2026";
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c];
+    });
+  }
+  function loadLog() {
+    try { return JSON.parse(localStorage.getItem("fc_draw_log")) || []; } catch (e) { return []; }
+  }
+  function fmt(ts) { try { return new Date(ts).toLocaleString("ko-KR"); } catch (e) { return ts || ""; } }
+
+  function render() {
+    var log = loadLog();
+    var wins = log.filter(function (e) { return e.grade === "A"; });
+    var counts = {};
+    log.forEach(function (e) { counts[e.grade] = (counts[e.grade] || 0) + 1; });
+    var statHtml = "<span class='stat'>총 뽑기 " + log.length + "회</span>" +
+      ["A","B","C","D","E","F"].map(function (g) {
+        return "<span class='stat'>" + g + "등급 " + (counts[g] || 0) + "</span>";
+      }).join("");
+    document.getElementById("stats").innerHTML = statHtml;
+
+    if (!wins.length) {
+      document.getElementById("winners").innerHTML = "<p class='muted'>아직 A등급 당첨자가 없습니다.</p>";
+    } else {
+      document.getElementById("winners").innerHTML =
+        "<table><tr><th>이름</th><th>전화번호</th><th>당첨 시각</th></tr>" +
+        wins.map(function (w) {
+          return "<tr class='win'><td>" + esc(w.name || "(미입력)") + "</td><td>" +
+            esc(w.phone || "(미입력)") + "</td><td>" + esc(fmt(w.ts)) + "</td></tr>";
+        }).join("") + "</table>";
+    }
+
+    document.getElementById("log").innerHTML =
+      "<table><tr><th>등급</th><th>시각</th><th>이름</th><th>전화</th></tr>" +
+      log.slice().reverse().map(function (e) {
+        return "<tr" + (e.grade === "A" ? " class='win'" : "") + "><td>" + esc(e.grade) + "</td><td>" +
+          esc(fmt(e.ts)) + "</td><td>" + esc(e.name || "") + "</td><td>" + esc(e.phone || "") + "</td></tr>";
+      }).join("") + "</table>";
+  }
+
+  function exportCsv() {
+    var log = loadLog();
+    var rows = [["등급","시각","이름","전화번호"]].concat(log.map(function (e) {
+      return [e.grade, e.ts || "", e.name || "", e.phone || ""];
+    }));
+    var csv = rows.map(function (r) {
+      return r.map(function (c) { return '"' + String(c).replace(/"/g, '""') + '"'; }).join(",");
+    }).join("\r\n");
+    var blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "foodcare_draw_log.csv";
+    a.click();
+  }
+
+  document.getElementById("btn-login").addEventListener("click", function () {
+    if (document.getElementById("pw").value === ADMIN_PW) {
+      document.getElementById("gate").classList.add("hidden");
+      document.getElementById("panel").classList.remove("hidden");
+      render();
+    } else {
+      document.getElementById("err").textContent = "비밀번호가 틀렸습니다.";
+    }
+  });
+  document.getElementById("pw").addEventListener("keydown", function (e) {
+    if (e.key === "Enter") document.getElementById("btn-login").click();
+  });
+  document.getElementById("btn-export").addEventListener("click", exportCsv);
+</script>
+</body>
+</html>

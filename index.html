@@ -199,6 +199,20 @@
   .linkbtn { background: none; border: none; color: #888; font-size: 0.95rem;
     text-decoration: underline; cursor: pointer; font-family: inherit; }
 
+  /* 행운 돌림판 */
+  .ticket-count { font-size: 1.2rem; font-weight: bold; color: var(--accent); }
+  .wheel-wrap { position: relative; width: 280px; height: 280px; margin: 6px auto; }
+  .wheel-pointer { position: absolute; top: -4px; left: 50%; transform: translateX(-50%); z-index: 3;
+    width: 0; height: 0; border-left: 14px solid transparent; border-right: 14px solid transparent;
+    border-top: 26px solid #111; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.3)); }
+  .wheel { width: 100%; height: 100%; border-radius: 50%; position: relative;
+    border: 6px solid #fff; box-shadow: 0 2px 12px rgba(0,0,0,0.25);
+    transition: transform 4.5s cubic-bezier(0.15, 0.85, 0.2, 1); }
+  .wheel .wlabel { position: absolute; top: 50%; left: 50%; color: #fff; font-weight: 900;
+    font-size: 1.25rem; text-shadow: 0 1px 2px rgba(0,0,0,0.4); }
+  .wheel-result { min-height: 1.6em; font-size: 1.4rem; font-weight: 900; }
+  .wheel-result .a { color: #B8860B; }
+
   /* 자막 바 — 음성 내용을 항상 글로도 표시 */
   #caption {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
@@ -250,6 +264,7 @@
   <button id="btn-food" class="bigbtn">🍚 음식 사진 AI 분석</button>
   <button id="btn-scan" class="bigbtn">📷 성분표 찍기</button>
   <button id="btn-diary" class="bigbtn secondary">📒 식단 기록 보기</button>
+  <button id="btn-wheel" class="bigbtn secondary">🎡 행운 돌림판</button>
   <div class="btnrow">
     <button id="btn-manual" class="bigbtn secondary small">✏️ 직접 입력</button>
     <button id="btn-settings" class="bigbtn secondary small">🔑 AI 설정</button>
@@ -350,6 +365,35 @@
   <button id="btn-diary-home" class="bigbtn secondary small">← 처음으로</button>
 </section>
 
+<!-- 행운 돌림판 (뽑기 가챠) -->
+<section id="screen-wheel" class="screen center">
+  <h1>🎡 행운 돌림판</h1>
+  <p class="sub">음식을 식단에 등록할 때마다 <b>뽑기권 1장</b>! 돌려서 등급을 뽑아요.<br><b>A등급은 경품 당첨</b>이에요.</p>
+  <p id="wheel-tickets" class="ticket-count"></p>
+  <div class="wheel-wrap">
+    <div class="wheel-pointer"></div>
+    <div id="wheel" class="wheel"></div>
+  </div>
+  <div id="wheel-result" class="wheel-result"></div>
+  <button id="btn-spin" class="bigbtn">🎲 돌리기 (뽑기권 1장 사용)</button>
+  <button id="btn-wheel-home" class="bigbtn secondary small">← 처음으로</button>
+  <p class="disclaimer">확률 — A 1% · B 4% · C 10% · D 20% · E 30% · F 35%. 결과는 기기에 기록됩니다.</p>
+</section>
+
+<!-- A등급 경품 응모 (이름·전화번호) -->
+<section id="screen-winner" class="screen center">
+  <div style="font-size:4rem;">🎉</div>
+  <h1>A등급 경품 당첨!</h1>
+  <p class="sub">축하해요! 경품을 보내드릴게요.<br>이름과 전화번호를 남겨 주세요.</p>
+  <input id="win-name" type="text" placeholder="이름" aria-label="이름"
+    style="font-size:1.1rem; width:100%; max-width:440px; padding:14px; border:3px solid var(--accent); border-radius:12px;">
+  <input id="win-phone" type="tel" inputmode="tel" placeholder="전화번호 (010-0000-0000)" aria-label="전화번호"
+    style="font-size:1.1rem; width:100%; max-width:440px; padding:14px; border:3px solid var(--accent); border-radius:12px;">
+  <button id="btn-win-submit" class="bigbtn">응모하기</button>
+  <button id="btn-win-skip" class="bigbtn secondary small">나중에 할래요</button>
+  <p class="disclaimer">입력하신 이름·전화번호는 경품 발송에만 사용됩니다.</p>
+</section>
+
 <!-- API 키 설정 -->
 <section id="screen-apikey" class="screen center">
   <h1>🔑 AI 설정</h1>
@@ -385,6 +429,7 @@
 <script src="js/ai.js"></script>
 <script src="js/diary.js"></script>
 <script src="js/advice.js"></script>
+<script src="js/draw.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>
