@@ -4,7 +4,7 @@
   "use strict";
 
   // 앱 버전 — 배포할 때마다 올린다. 폰에서 최신 버전이 로드됐는지 확인용.
-  var APP_VERSION = "1.3";
+  var APP_VERSION = "1.4";
 
   var $ = function (id) { return document.getElementById(id); };
   var screens = ["home", "camera", "progress", "manual", "result", "food", "diary", "apikey", "fail"];
@@ -591,6 +591,7 @@
   });
   $("btn-settings").addEventListener("click", function () {
     $("apikey-input").value = apiKey();
+    updateProviderHint();
     show("apikey");
   });
 
@@ -659,12 +660,23 @@
   });
   $("btn-diary-home").addEventListener("click", function () { show("home"); });
 
-  // API 키 설정
+  // API 키 설정 — 입력한 키가 어떤 AI로 인식되는지 즉시 표시
+  function providerKo(k) {
+    if (!k) return "";
+    return FoodAI.detectProvider(k) === "gemini" ? "Gemini (무료)" : "Claude";
+  }
+  function updateProviderHint() {
+    var el = $("apikey-provider");
+    if (!el) return;
+    var k = $("apikey-input").value.trim();
+    el.textContent = k ? "→ " + providerKo(k) + " 키로 인식됩니다" : "";
+  }
+  $("apikey-input").addEventListener("input", updateProviderHint);
   $("btn-apikey-save").addEventListener("click", function () {
     var k = $("apikey-input").value.trim();
     if (!k) { speak("키를 입력해 주세요."); return; }
     try { localStorage.setItem("fc_api_key", k); } catch (e) { /* ignore */ }
-    speak("저장했어요. 이제 음식 사진을 분석할 수 있어요.");
+    speak(providerKo(k) + " 키를 저장했어요. 이제 음식 사진과 성분표를 분석할 수 있어요.");
     show("home");
   });
   $("btn-apikey-back").addEventListener("click", function () { show("home"); });

@@ -1,7 +1,41 @@
 const test = require("node:test");
 const assert = require("node:assert");
-const { buildFoodRequest, parseAiReply, buildLabelRequest, parseLabelReply, MODEL }
+const { buildFoodRequest, parseAiReply, buildLabelRequest, parseLabelReply,
+  buildGeminiRequest, parseGeminiText, detectProvider, foodPrompt, labelPrompt, MODEL }
   = require("../js/ai.js");
+
+// ── 제공자 자동 감지 (키 접두사) ───────────────────────────────
+test("제공자 감지: AIza→gemini, sk-ant→claude, 빈 값→claude", () => {
+  assert.equal(detectProvider("AIzaSyABC123"), "gemini");
+  assert.equal(detectProvider("sk-ant-api03-xyz"), "claude");
+  assert.equal(detectProvider(""), "claude");
+  assert.equal(detectProvider(null), "claude");
+});
+
+// ── Gemini 요청·응답 ───────────────────────────────────────────
+test("Gemini 요청: 이미지 inline_data + JSON 모드 + thinking off", () => {
+  const req = buildGeminiRequest("B64", labelPrompt(["diabetes"]));
+  const part0 = req.contents[0].parts[0];
+  assert.equal(part0.inline_data.mime_type, "image/jpeg");
+  assert.equal(part0.inline_data.data, "B64");
+  assert.match(req.contents[0].parts[1].text, /1회 제공량/);
+  assert.equal(req.generationConfig.responseMimeType, "application/json");
+  assert.equal(req.generationConfig.thinkingConfig.thinkingBudget, 0);
+});
+
+test("Gemini 파싱: candidates→parts 텍스트 추출, 그 텍스트를 parseLabelReply가 처리", () => {
+  const labelJson = JSON.stringify({
+    is_label: true, food_name: "라면", confidence: "high", kcal: 500, carbs_g: 79,
+    sugar_g: 4, sodium_mg: 1790, protein_g: 10, fat_g: 16, servings_per_pack: -1,
+    purine_level: "medium", health_note: "", portion_advice: ""
+  });
+  const data = { candidates: [{ content: { parts: [{ text: labelJson }] } }] };
+  const text = parseGeminiText(data);
+  assert.equal(parseLabelReply(text).sodium_mg, 1790);
+  // 방어: 빈 응답
+  assert.equal(parseGeminiText({}), "");
+  assert.equal(parseGeminiText(null), "");
+});
 
 test("AI 요청: 모델·이미지 블록·프롬프트 JSON 지시 포함 (구조화출력 미사용)", () => {
   const req = buildFoodRequest("BASE64DATA");

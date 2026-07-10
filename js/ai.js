@@ -1,6 +1,6 @@
-/* AI 음식 분석 — Claude 비전 API로 음식 인식 + 전체 영양 추정 (다질환 맞춤).
-   요청 생성(buildFoodRequest)과 응답 파싱(parseAiReply)은 순수 함수(node 테스트 가능).
-   실제 네트워크 호출(analyzeFoodImage)만 브라우저 전용. */
+/* AI 음식 분석 — Claude 또는 Gemini 비전으로 음식 인식 + 전체 영양 추정 (다질환 맞춤).
+   프롬프트 생성·응답 파싱은 순수 함수(node 테스트 가능). 실제 호출만 브라우저 전용.
+   제공자는 API 키 접두사로 자동 감지 (sk-ant → Claude, AIza → Gemini). */
 (function (root, factory) {
   if (typeof module === "object" && module.exports) module.exports = factory();
   else root.FoodAI = factory();
@@ -8,6 +8,16 @@
 
   var API_URL = "https://api.anthropic.com/v1/messages";
   var MODEL = "claude-opus-4-8";
+  var GEMINI_MODEL = "gemini-2.5-flash"; // 무료 등급 있음, 비전+JSON 지원
+  var GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/" +
+    GEMINI_MODEL + ":generateContent";
+
+  /** API 키 접두사로 제공자 판별 */
+  function detectProvider(apiKey) {
+    var k = apiKey || "";
+    if (k.indexOf("AIza") === 0) return "gemini";  // Google API 키
+    return "claude";                                // sk-ant... (기본)
+  }
 
   var DISEASE_KO = { diabetes: "당뇨", hypertension: "고혈압", kidney: "신장질환", gout: "통풍" };
 
@@ -65,27 +75,52 @@
     "  \"portion_advice\": \"섭취량 조언(한국어, 40자 이내)\"\n" +
     "}";
 
-  /** 성분표 사진 판독 요청 (순수 함수) */
-  function buildLabelRequest(base64Jpeg, diseases) {
-    var prompt =
-      "사진 속 영양성분표를 읽어 주세요. 수치는 반드시 1회 제공량 기준으로 환산해 주세요 " +
+  /** 성분표 판독 프롬프트 (순수 함수) */
+  function labelPrompt(diseases) {
+    return "사진 속 영양성분표를 읽어 주세요. 수치는 반드시 1회 제공량 기준으로 환산해 주세요 " +
       "(표가 100g 기준 또는 총 내용량 기준이면 1회 제공량으로 환산하고, 1회 제공량 정보가 없으면 표에 적힌 값을 그대로). " +
       "표에 없는 항목은 -1로 하세요. 0으로 적지 마세요. " +
       "제품 종류를 보고 퓨린 등급도 추정하되, 무슨 제품인지 알 수 없으면 unknown으로 하세요. " +
       whoLine(diseases) + " " +
       "영양성분표가 보이지 않는 사진이면 is_label을 false로 하세요." + LABEL_JSON_SPEC;
-    return visionRequest(base64Jpeg, prompt);
   }
 
-  /** API 요청 본문 생성 (순수 함수). diseases: ["diabetes",...] — 조언 맞춤용 */
-  function buildFoodRequest(base64Jpeg, diseases) {
-    var prompt =
-      "사진 속 음식이 무엇인지 알아보고, 사진에 보이는 양 기준 영양성분을 추정해 주세요. " +
+  /** 음식 추정 프롬프트 (순수 함수) */
+  function foodPrompt(diseases) {
+    return "사진 속 음식이 무엇인지 알아보고, 사진에 보이는 양 기준 영양성분을 추정해 주세요. " +
       "모든 수치는 대략적인 추정치입니다. 음식이 여러 개면 전체 합으로 추정하세요. " +
       whoLine(diseases) + " " +
       "음식이 아니거나 알아볼 수 없으면 food_name을 \"알 수 없음\", confidence를 \"low\"로 하고 수치는 0으로 하세요." +
       FOOD_JSON_SPEC;
-    return visionRequest(base64Jpeg, prompt);
+  }
+
+  /** Claude 성분표/음식 요청 본문 (순수 함수, 테스트용) */
+  function buildLabelRequest(base64Jpeg, diseases) { return visionRequest(base64Jpeg, labelPrompt(diseases)); }
+  function buildFoodRequest(base64Jpeg, diseases) { return visionRequest(base64Jpeg, foodPrompt(diseases)); }
+
+  /** Gemini 요청 본문 (순수 함수). thinkingBudget 0으로 추론 끄고 JSON만 받는다 */
+  function buildGeminiRequest(base64Jpeg, prompt) {
+    return {
+      contents: [{
+        parts: [
+          { inline_data: { mime_type: "image/jpeg", data: base64Jpeg } },
+          { text: prompt }
+        ]
+      }],
+      generationConfig: {
+        temperature: 0.2,
+        maxOutputTokens: 2048,
+        responseMimeType: "application/json",
+        thinkingConfig: { thinkingBudget: 0 }
+      }
+    };
+  }
+
+  /** Gemini 응답 → 텍스트 추출 (순수 함수) */
+  function parseGeminiText(data) {
+    var cand = ((data || {}).candidates || [])[0];
+    var parts = (cand && cand.content && cand.content.parts) || [];
+    return parts.map(function (p) { return p.text || ""; }).join("");
   }
 
   function extractJson(text) {
@@ -134,11 +169,39 @@
 
   var TIMEOUT_MS = 60000; // 노년층이 스피너에 갇히지 않게 상한
 
-  /** 브라우저 전용: 요청 본문 → 응답 텍스트 (타임아웃·오류 코드 공통 처리) */
-  function callClaude(reqBody, apiKey) {
+  // fetch에 타임아웃(AbortController)을 걸어주는 헬퍼
+  function fetchWithTimeout(url, opts) {
     var ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
     var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, TIMEOUT_MS) : null;
-    return fetch(API_URL, {
+    if (ctrl) opts.signal = ctrl.signal;
+    return fetch(url, opts).then(function (resp) {
+      if (timer) clearTimeout(timer);
+      return resp;
+    }, function (err) {
+      if (timer) clearTimeout(timer);
+      if (err && err.name === "AbortError") throw new Error("TIMEOUT");
+      throw err;
+    });
+  }
+
+  // HTTP 상태 → 공통 오류 코드 + 본문에서 실제 사유 추출
+  function toError(resp, body) {
+    var detail = "";
+    try { detail = (JSON.parse(body).error || {}).message || ""; } catch (e) { detail = ""; }
+    if (!detail) detail = (body || "").slice(0, 200);
+    var code = resp.status === 401 || resp.status === 403 ? "AUTH"
+      : resp.status === 400 && /API_KEY_INVALID|API key not valid/i.test(detail) ? "AUTH"
+      : resp.status === 429 ? "RATE"
+      : resp.status >= 500 ? "OVERLOADED"
+      : "API_" + resp.status;
+    var err = new Error(code);
+    err.detail = detail;
+    return err;
+  }
+
+  /** 브라우저 전용: Claude 비전 호출 → 응답 텍스트 */
+  function callClaude(base64Jpeg, prompt, apiKey) {
+    return fetchWithTimeout(API_URL, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -146,27 +209,10 @@
         "anthropic-version": "2023-06-01",
         "anthropic-dangerous-direct-browser-access": "true"
       },
-      body: JSON.stringify(reqBody),
-      signal: ctrl ? ctrl.signal : undefined
-    }).catch(function (err) {
-      if (err && err.name === "AbortError") throw new Error("TIMEOUT");
-      throw err;
+      body: JSON.stringify(visionRequest(base64Jpeg, prompt))
     }).then(function (resp) {
-      if (timer) clearTimeout(timer);
       if (resp.ok) return resp.json();
-      // 오류 응답 — API가 알려주는 실제 사유를 본문에서 뽑아 err.detail에 담는다
-      return resp.text().then(function (body) {
-        var detail = "";
-        try { detail = (JSON.parse(body).error || {}).message || ""; } catch (e) { detail = ""; }
-        if (!detail) detail = (body || "").slice(0, 200);
-        var code = resp.status === 401 || resp.status === 403 ? "AUTH"
-          : resp.status === 429 ? "RATE"
-          : resp.status >= 500 ? "OVERLOADED"
-          : "API_" + resp.status;
-        var err = new Error(code);
-        err.detail = detail;
-        throw err;
-      });
+      return resp.text().then(function (body) { throw toError(resp, body); });
     }).then(function (data) {
       if (data.stop_reason === "refusal") throw new Error("REFUSED");
       var textBlock = (data.content || []).filter(function (b) { return b.type === "text"; })[0];
@@ -174,9 +220,33 @@
     });
   }
 
+  /** 브라우저 전용: Gemini 비전 호출 → 응답 텍스트 */
+  function callGemini(base64Jpeg, prompt, apiKey) {
+    return fetchWithTimeout(GEMINI_URL + "?key=" + encodeURIComponent(apiKey), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(buildGeminiRequest(base64Jpeg, prompt))
+    }).then(function (resp) {
+      if (resp.ok) return resp.json();
+      return resp.text().then(function (body) { throw toError(resp, body); });
+    }).then(function (data) {
+      if (data.promptFeedback && data.promptFeedback.blockReason) throw new Error("REFUSED");
+      var cand = ((data.candidates) || [])[0];
+      if (cand && cand.finishReason === "SAFETY") throw new Error("REFUSED");
+      return parseGeminiText(data);
+    });
+  }
+
+  /** 제공자 자동 감지 후 비전 호출 → 응답 텍스트 */
+  function callVision(base64Jpeg, prompt, apiKey) {
+    return detectProvider(apiKey) === "gemini"
+      ? callGemini(base64Jpeg, prompt, apiKey)
+      : callClaude(base64Jpeg, prompt, apiKey);
+  }
+
   /** 브라우저 전용: 음식 사진(base64 JPEG) → 영양 추정 */
   function analyzeFoodImage(base64Jpeg, apiKey, diseases) {
-    return callClaude(buildFoodRequest(base64Jpeg, diseases), apiKey).then(function (text) {
+    return callVision(base64Jpeg, foodPrompt(diseases), apiKey).then(function (text) {
       var parsed = parseAiReply(text);
       if (!parsed) throw new Error("PARSE");
       return parsed;
@@ -185,7 +255,7 @@
 
   /** 브라우저 전용: 성분표 사진(base64 JPEG) → 라벨 판독 */
   function analyzeLabelImage(base64Jpeg, apiKey, diseases) {
-    return callClaude(buildLabelRequest(base64Jpeg, diseases), apiKey).then(function (text) {
+    return callVision(base64Jpeg, labelPrompt(diseases), apiKey).then(function (text) {
       var parsed = parseLabelReply(text);
       if (!parsed) throw new Error("PARSE");
       return parsed;
@@ -194,5 +264,8 @@
 
   return { buildFoodRequest: buildFoodRequest, parseAiReply: parseAiReply,
     buildLabelRequest: buildLabelRequest, parseLabelReply: parseLabelReply,
-    analyzeFoodImage: analyzeFoodImage, analyzeLabelImage: analyzeLabelImage, MODEL: MODEL };
+    buildGeminiRequest: buildGeminiRequest, parseGeminiText: parseGeminiText,
+    detectProvider: detectProvider, foodPrompt: foodPrompt, labelPrompt: labelPrompt,
+    analyzeFoodImage: analyzeFoodImage, analyzeLabelImage: analyzeLabelImage,
+    MODEL: MODEL, GEMINI_MODEL: GEMINI_MODEL };
 });
