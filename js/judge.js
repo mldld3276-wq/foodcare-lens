@@ -99,12 +99,16 @@
     // 질환 미선택 = 일반 건강 모드: 당류 + 나트륨(일반 기준)을 하나의 신호등으로 종합.
     // 중증도는 질환의 정도이므로 여기서는 적용하지 않는다.
     if (!diseases.length) {
-      var gs = judgeSugar(Number(n.sugar_g), { hasDiabetes: false });
-      var gn = judgeSodium(Number(n.sodium_mg), { disease: "general" });
+      var gsV = Number(n.sugar_g), gnV = Number(n.sodium_mg);
+      var gs = judgeSugar(gsV, { hasDiabetes: false });
+      var gn = judgeSodium(gnV, { disease: "general" });
       var gColor = worst([gs.color, gn.color].filter(function (c) { return c !== "unknown"; }));
+      var gParts = [
+        isNaN(gsV) ? "당류 정보 없음" : "당류 " + fmt(gsV) + "g",
+        isNaN(gnV) ? "나트륨 정보 없음" : "나트륨 " + Math.round(gnV) + "mg"
+      ];
       results.push({ disease: "general", name: "일반", color: gColor,
-        label: LABEL_KO[gColor] || "판정 불가",
-        detail: "당류 " + fmt(n.sugar_g) + "g · 나트륨 " + Math.round(Number(n.sodium_mg) || 0) + "mg" });
+        label: LABEL_KO[gColor] || "판정 불가", detail: gParts.join(" · ") });
       return { results: results, overall: gColor };
     }
 
@@ -112,14 +116,17 @@
       if (DISEASES.indexOf(d) === -1) return;
       var r = null;
       if (d === "diabetes") {
-        var s = judgeSugar(Number(n.sugar_g), { severity: severity });
-        r = { color: s.color, detail: "당류 " + fmt(n.sugar_g) + "g" };
+        var sv = Number(n.sugar_g);
+        var s = judgeSugar(sv, { severity: severity });
+        r = { color: s.color, detail: isNaN(sv) ? "당류 정보 없음" : "당류 " + fmt(sv) + "g" };
       } else if (d === "hypertension") {
-        var h = judgeSodium(Number(n.sodium_mg), { severity: severity, disease: "hypertension" });
-        r = { color: h.color, detail: "나트륨 " + Math.round(n.sodium_mg) + "mg" };
+        var hv = Number(n.sodium_mg);
+        var h = judgeSodium(hv, { severity: severity, disease: "hypertension" });
+        r = { color: h.color, detail: isNaN(hv) ? "나트륨 정보 없음" : "나트륨 " + Math.round(hv) + "mg" };
       } else if (d === "kidney") {
-        var k = judgeSodium(Number(n.sodium_mg), { severity: severity, disease: "kidney" });
-        var detail = "나트륨 " + Math.round(n.sodium_mg) + "mg";
+        var kv = Number(n.sodium_mg);
+        var k = judgeSodium(kv, { severity: severity, disease: "kidney" });
+        var detail = isNaN(kv) ? "나트륨 정보 없음" : "나트륨 " + Math.round(kv) + "mg";
         var color = k.color;
         if (Number(n.protein_g) > KIDNEY_PROTEIN_CAUTION && color === "green") {
           color = "yellow";

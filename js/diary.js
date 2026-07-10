@@ -43,11 +43,13 @@
     return { bowls: bowls, icons: icons, text: text };
   }
 
-  /** 기록 배열 → 영양 합계 (순수 함수) */
+  /** 기록 배열 → 영양 합계 (순수 함수). 성분표에 없던 항목(null/undefined)은 별도 카운트 */
   function sumNutrition(entries) {
     var t = { kcal: 0, carbs_g: 0, sugar_g: 0, sodium_mg: 0, protein_g: 0, fat_g: 0,
-      count: 0, purineHigh: 0, purineMedium: 0 };
+      count: 0, purineHigh: 0, purineMedium: 0, sugarUnknown: 0, sodiumUnknown: 0 };
     (entries || []).forEach(function (e) {
+      if (e.sugar_g == null) t.sugarUnknown += 1;
+      if (e.sodium_mg == null) t.sodiumUnknown += 1;
       t.kcal += Number(e.kcal) || 0;
       t.carbs_g += Number(e.carbs_g) || 0;
       t.sugar_g += Number(e.sugar_g) || 0;
@@ -133,12 +135,33 @@
       reasons.push("열량 " + totals.kcal + "kcal — 하루 기준(" + DAILY.kcal + ")을 넘었어요");
     }
 
+    // 성분표에 없어 '정보 없음'으로 기록된 항목 — 합산에서 0으로 둔갑해
+    // '양호'가 나가면 안 되므로, 관련 질환이 있으면 주의로 올리고 사유를 명시
+    var sugarRelevant = isGeneral || diseases.indexOf("diabetes") !== -1;
+    var sodiumRelevant = isGeneral || diseases.indexOf("hypertension") !== -1 ||
+      diseases.indexOf("kidney") !== -1;
+    var hasUnknown = false;
+    if (sugarRelevant && (totals.sugarUnknown || 0) > 0) {
+      bump("caution");
+      hasUnknown = true;
+      reasons.push("⚠️ 당류 정보 없는 기록 " + totals.sugarUnknown +
+        "건 — 실제 섭취량은 표시보다 많을 수 있어요");
+    }
+    if (sodiumRelevant && (totals.sodiumUnknown || 0) > 0) {
+      bump("caution");
+      hasUnknown = true;
+      reasons.push("⚠️ 나트륨 정보 없는 기록 " + totals.sodiumUnknown +
+        "건 — 실제 섭취량은 표시보다 많을 수 있어요");
+    }
+
     var label = { good: "건강해요", caution: "주의", risk: "위험" }[level];
     var speechCore = { good: "오늘 식단은 건강한 편이에요.",
       caution: "오늘 식단은 주의가 필요해요.",
       risk: "오늘 식단은 위험한 수준이에요." }[level];
     var speech = speechCore + " 당류 " + totals.sugar_g + "그램, 나트륨 " +
-      Math.round(totals.sodium_mg) + "밀리그램 드셨어요. 추정치이므로 참고만 하세요.";
+      Math.round(totals.sodium_mg) + "밀리그램 드셨어요." +
+      (hasUnknown ? " 일부 기록은 영양 정보가 없어 실제로는 더 많이 드셨을 수 있어요." : "") +
+      " 추정치이므로 참고만 하세요.";
     return { level: level, label: label, reasons: reasons, speech: speech, limits: limits };
   }
 

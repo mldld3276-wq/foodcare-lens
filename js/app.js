@@ -138,9 +138,62 @@
     else runLabelOcr(canvas, my);
   }
 
-  // ── 성분표 OCR 경로 ──────────────────────────────────────────
+  // ── 성분표 경로: AI 키가 있으면 AI 판독(정확), 없으면 무료 OCR ──
   function runLabelOcr(canvas, my) {
-    speak("찍혔습니다. 성분표를 읽고 있어요. 잠시만 기다려 주세요.");
+    if (apiKey()) { runLabelAi(canvas, my); return; }
+    runLabelTesseract(canvas, my);
+  }
+
+  /** 성분표 → 라벨 객체를 음식 결과 형태로 변환. 표에 없는 항목은 undefined(판정 불가) */
+  function makeFoodFromLabel(label) {
+    var f = {
+      food_name: label.food_name || "포장 식품",
+      confidence: label.confidence,
+      kcal: label.kcal == null ? undefined : label.kcal,
+      carbs_g: label.carbs_g == null ? undefined : label.carbs_g,
+      sugar_g: label.sugar_g == null ? undefined : label.sugar_g,
+      sodium_mg: label.sodium_mg == null ? undefined : label.sodium_mg,
+      protein_g: label.protein_g == null ? undefined : label.protein_g,
+      fat_g: label.fat_g == null ? undefined : label.fat_g,
+      purine_level: label.purine_level,
+      health_note: label.health_note || "",
+      portion_advice: label.portion_advice || "",
+      _label: true,
+      _servings: label.servings_per_pack || null
+    };
+    if (f._servings > 1) {
+      f.health_note = ("총 " + f._servings + "회 제공 포장 — 전부 드시면 표시 수치의 " +
+        f._servings + "배예요. " + f.health_note).trim();
+    }
+    return f;
+  }
+
+  function runLabelAi(canvas, my) {
+    speak("찍혔습니다. AI가 성분표를 읽고 있어요. 잠시만 기다려 주세요.");
+    $("ocr-progress").textContent = "AI가 성분표를 읽고 있어요…";
+    var scaled = downscale(canvas, 1600); // 성분표 글자 판독용 — 음식보다 크게
+    var base64 = scaled.toDataURL("image/jpeg", 0.9).split(",")[1];
+    FoodAI.analyzeLabelImage(base64, apiKey(), profile.diseases).then(function (label) {
+      if (my !== jobId) return;
+      if (!label.is_label ||
+          (label.sugar_g == null && label.sodium_mg == null && label.kcal == null)) {
+        runLabelTesseract(canvas, my); // 성분표를 못 알아봄 → 무료 OCR로 한 번 더
+        return;
+      }
+      lastFood = makeFoodFromLabel(label);
+      showFoodResult(lastFood);
+    }).catch(function (err) {
+      if (my !== jobId) return;
+      // 키 오류는 설정 문제라 계속 반복됨 — 조용히 폴백하면 사용자가 영영 모른다
+      if (err && err.message === "AUTH") {
+        speak("API 키가 올바르지 않아 무료 인식으로 대신 읽어요. AI 설정에서 키를 확인해 주세요.");
+      }
+      runLabelTesseract(canvas, my); // AI 실패(키 오류·네트워크 등) → 무료 OCR 폴백
+    });
+  }
+
+  function runLabelTesseract(canvas, my) {
+    speak("성분표를 읽고 있어요. 잠시만 기다려 주세요.");
     $("ocr-progress").textContent = "성분표를 읽고 있어요…";
     if (typeof Tesseract === "undefined") {
       speak("인터넷 연결이 없어 글자를 읽을 수 없어요. 직접 입력해 주세요.");
@@ -196,7 +249,8 @@
         TIMEOUT: "응답이 너무 오래 걸려 중단했어요. 다시 시도해 주세요.",
         REFUSED: "이 사진은 분석할 수 없어요.",
         PARSE: "분석 결과를 읽지 못했어요. 다시 찍어 주세요."
-      }[err.message] || "분석에 실패했어요. 인터넷 연결을 확인하고 다시 시도해 주세요.";
+      }[err.message] ||
+        "분석에 실패했어요 (원인: " + err.message + ").\n인터넷 연결을 확인하고 다시 시도해 주세요.";
       showFail("food", msg);
     });
   }
@@ -234,8 +288,8 @@
     var emoji = { green: "🟢", yellow: "🟡", red: "🔴", unknown: "⚪" };
 
     $("food-name").textContent = food.food_name;
-    $("food-confidence").textContent = "AI 추정 · 확신도 " +
-      ({ high: "높음", medium: "보통", low: "낮음" }[food.confidence]);
+    $("food-confidence").textContent = (food._label ? "AI 성분표 판독 · 1회 제공량 기준 · 확신도 "
+      : "AI 추정 · 확신도 ") + ({ high: "높음", medium: "보통", low: "낮음" }[food.confidence]);
 
     // 질환별 신호등 칩
     $("food-verdicts").innerHTML = meal.results.map(function (r) {
@@ -251,14 +305,20 @@
     $("food-advice").textContent = food.portion_advice ? "🥄 " + food.portion_advice : "";
     $("food-advice").style.display = food.portion_advice ? "" : "none";
 
-    var purineKo = { low: "낮음", medium: "보통", high: "높음" }[food.purine_level];
+    var purineKo = ({ low: "낮음", medium: "보통", high: "높음" }[food.purine_level] || "알 수 없음") +
+      (food._label ? " (제품 종류로 추정)" : "");
+    function cell(v, unit, round) {
+      var num = Number(v);
+      if (v == null || isNaN(num)) return "—"; // 성분표에 없던 항목
+      return (round ? Math.round(num) : num) + " " + unit;
+    }
     var rows = [
-      ["열량", Math.round(food.kcal) + " kcal"],
-      ["탄수화물", food.carbs_g + " g"],
-      ["당류", food.sugar_g + " g"],
-      ["나트륨", Math.round(food.sodium_mg) + " mg"],
-      ["단백질", food.protein_g + " g"],
-      ["지방", food.fat_g + " g"],
+      ["열량", cell(food.kcal, "kcal", true)],
+      ["탄수화물", cell(food.carbs_g, "g")],
+      ["당류", cell(food.sugar_g, "g")],
+      ["나트륨", cell(food.sodium_mg, "mg", true)],
+      ["단백질", cell(food.protein_g, "g")],
+      ["지방", cell(food.fat_g, "g")],
       ["퓨린(통풍)", purineKo]
     ];
     $("food-table").innerHTML = rows.map(function (r) {
@@ -269,14 +329,35 @@
     selectMealChip(FoodDiary.guessMealType(new Date().getHours()));
     show("food");
 
-    // 음성: 음식명 + 분량 + 질환별 최악 판정 + 조언
-    var worstResults = meal.results.filter(function (r) { return r.color === meal.overall; });
-    var verdictSpeech = meal.results.length === 1
-      ? meal.results[0].name + " 기준 " + ({ green: "안심이에요", yellow: "주의가 필요해요", red: "위험해요" }[meal.overall] || "판정이 어려워요")
-      : worstResults.map(function (r) { return r.name; }).join("와 ") + " 기준 " +
-        ({ green: "모두 안심이에요", yellow: "주의가 필요해요", red: "위험해요" }[meal.overall] || "판정이 어려워요");
-    var speech = withRo(food.food_name) + " 보여요. " + (bowls.text ? bowls.text + "이에요. " : "") +
-      verdictSpeech + ". " + (food.portion_advice ? food.portion_advice + ". " : "") +
+    // 음성: 음식명 + 분량 + 질환별 판정 + 판정 불가 고지 + 조언
+    var known = meal.results.filter(function (r) { return r.color !== "unknown"; });
+    var unknowns = meal.results.filter(function (r) { return r.color === "unknown"; });
+    var verdictSpeech;
+    if (!known.length) {
+      verdictSpeech = "성분 정보가 부족해 판정하지 못했어요";
+    } else if (known.length === 1) {
+      verdictSpeech = known[0].name + " 기준 " +
+        ({ green: "안심이에요", yellow: "주의가 필요해요", red: "위험해요" }[meal.overall] || "판정이 어려워요");
+    } else {
+      var worstResults = known.filter(function (r) { return r.color === meal.overall; });
+      // '모두'는 판정 불가가 하나도 없을 때만 — 판정 못 한 질환이 있는데 '모두 안심'은 오신호
+      verdictSpeech = worstResults.map(function (r) { return r.name; }).join("와 ") + " 기준 " +
+        ({ green: (unknowns.length ? "안심이에요" : "모두 안심이에요"),
+           yellow: "주의가 필요해요", red: "위험해요" }[meal.overall] || "판정이 어려워요");
+    }
+    var unknownSpeech = unknowns.length
+      ? " " + unknowns.map(function (r) { return r.name; }).join("와 ") +
+        " 기준은 정보가 없어 판정하지 못했어요. 포장을 직접 확인해 주세요."
+      : "";
+    var servingsSpeech = (food._label && food._servings > 1)
+      ? " 이 봉지는 총 " + food._servings + "회 제공량이라, 전부 드시면 말씀드린 수치의 " +
+        food._servings + "배예요."
+      : "";
+    var speech = withRo(food.food_name) + " 보여요. " +
+      (food._label ? "1회 제공량 기준이에요. " : "") +
+      (bowls.text ? bowls.text + "이에요. " : "") +
+      verdictSpeech + "." + unknownSpeech + servingsSpeech + " " +
+      (food.portion_advice ? food.portion_advice + ". " : "") +
       "추정치이므로 참고만 하세요.";
     speak(speech);
   }
@@ -325,7 +406,9 @@
           var b = FoodDiary.kcalToBowls(e.kcal);
           return "<div class='meal-row'><span class='t'>" + esc(e.time || "") + "</span>" +
             "<span class='n'>" + esc(e.food_name) + "</span>" +
-            "<span class='v'>" + b.icons + " " + Math.round(e.kcal) + "kcal · 당 " + e.sugar_g + "g</span></div>";
+            "<span class='v'>" + b.icons + " " +
+            (e.kcal == null ? "–" : Math.round(Number(e.kcal) || 0)) + "kcal · 당 " +
+            (e.sugar_g == null ? "–" : e.sugar_g) + "g</span></div>";
         }).join("");
       });
       var tb = FoodDiary.kcalToBowls(totals.kcal);

@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert");
-const { buildFoodRequest, parseAiReply, MODEL } = require("../js/ai.js");
+const { buildFoodRequest, parseAiReply, buildLabelRequest, parseLabelReply, MODEL }
+  = require("../js/ai.js");
 
 test("AI 요청: 모델·구조화출력·이미지 블록 포함", () => {
   const req = buildFoodRequest("BASE64DATA");
@@ -73,4 +74,62 @@ test("AI 파싱: JSON 아님 → null", () => {
   assert.equal(parseAiReply("죄송합니다, 분석할 수 없습니다."), null);
   assert.equal(parseAiReply(""), null);
   assert.equal(parseAiReply(null), null);
+});
+
+// ── 성분표 AI 판독 ─────────────────────────────────────────────
+test("성분표 요청: 스키마·이미지·1회 제공량 환산 지시 포함", () => {
+  const req = buildLabelRequest("B64", ["hypertension"]);
+  assert.equal(req.model, MODEL);
+  assert.equal(req.output_config.format.type, "json_schema");
+  const s = req.output_config.format.schema;
+  assert.ok(s.required.includes("is_label"));
+  assert.ok(s.required.includes("sodium_mg"));
+  assert.deepEqual(s.properties.sugar_g.type, ["number", "null"]); // 없음=null (0과 구분)
+  assert.equal(req.messages[0].content[0].type, "image");
+  const prompt = req.messages[0].content[1].text;
+  assert.match(prompt, /1회 제공량 기준/);
+  assert.match(prompt, /환산/);
+  assert.match(prompt, /고혈압 환자/);
+});
+
+const LABEL = {
+  is_label: true, food_name: "신라면", confidence: "high",
+  kcal: 500, carbs_g: 79, sugar_g: 4, sodium_mg: 1790, protein_g: 10, fat_g: 16,
+  servings_per_pack: null, purine_level: "medium",
+  health_note: "나트륨이 매우 높아요", portion_advice: "국물은 남기세요"
+};
+
+test("성분표 파싱: 정상 라벨", () => {
+  const r = parseLabelReply(JSON.stringify(LABEL));
+  assert.equal(r.is_label, true);
+  assert.equal(r.sodium_mg, 1790);
+  assert.equal(r.food_name, "신라면");
+});
+
+test("성분표 파싱: 표에 없는 항목은 null 유지 (0으로 바꾸면 안 됨)", () => {
+  const bad = Object.assign({}, LABEL, { sugar_g: null, protein_g: null });
+  const r = parseLabelReply(JSON.stringify(bad));
+  assert.equal(r.sugar_g, null);
+  assert.equal(r.protein_g, null);
+  assert.equal(r.sodium_mg, 1790); // 있는 값은 유지
+});
+
+test("성분표 파싱: 음수·문자열 수치는 null로 방어", () => {
+  const bad = Object.assign({}, LABEL, { sodium_mg: -5, kcal: "많음" });
+  const r = parseLabelReply(JSON.stringify(bad));
+  assert.equal(r.sodium_mg, null);
+  assert.equal(r.kcal, null);
+});
+
+test("성분표 파싱: is_label false·코드펜스 처리", () => {
+  const notLabel = Object.assign({}, LABEL, { is_label: false });
+  assert.equal(parseLabelReply("```json\n" + JSON.stringify(notLabel) + "\n```").is_label, false);
+  assert.equal(parseLabelReply("응답 불가"), null);
+});
+
+test("성분표 파싱: 퓨린은 모르면 unknown (low 안심으로 기본 처리하면 안 됨)", () => {
+  const bad = Object.assign({}, LABEL, { purine_level: "???" });
+  assert.equal(parseLabelReply(JSON.stringify(bad)).purine_level, "unknown");
+  const un = Object.assign({}, LABEL, { purine_level: "unknown" });
+  assert.equal(parseLabelReply(JSON.stringify(un)).purine_level, "unknown");
 });

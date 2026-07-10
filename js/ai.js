@@ -34,16 +34,67 @@
     additionalProperties: false
   };
 
-  /** API 요청 본문 생성 (순수 함수). diseases: ["diabetes",...] — 조언 맞춤용 */
-  function buildFoodRequest(base64Jpeg, diseases) {
+  // 성분표 판독 스키마 — 표에 없는 항목은 null (0과 구분해야 오판정이 없다)
+  var LABEL_SCHEMA = {
+    type: "object",
+    properties: {
+      is_label: { type: "boolean", description: "사진에 영양성분표가 보이는지" },
+      food_name: { type: "string", description: "제품명 (포장에서 읽기, 안 보이면 '포장 식품')" },
+      confidence: { type: "string", enum: ["high", "medium", "low"], description: "판독 확신도" },
+      kcal: { type: ["number", "null"], description: "1회 제공량 기준 열량. 표에 없으면 null" },
+      carbs_g: { type: ["number", "null"], description: "탄수화물 g. 없으면 null" },
+      sugar_g: { type: ["number", "null"], description: "당류 g (1회 제공량 기준). 없으면 null" },
+      sodium_mg: { type: ["number", "null"], description: "나트륨 mg. 없으면 null" },
+      protein_g: { type: ["number", "null"], description: "단백질 g. 없으면 null" },
+      fat_g: { type: ["number", "null"], description: "지방 g. 없으면 null" },
+      servings_per_pack: { type: ["number", "null"], description: "총 제공 횟수 (예: '총 3회'). 없으면 null" },
+      purine_level: { type: "string", enum: ["low", "medium", "high", "unknown"],
+        description: "제품 종류로 추정한 퓨린 등급 (통풍 관점). 제품 종류를 알 수 없으면 unknown" },
+      health_note: { type: "string", description: "사용자 질환 관점 한 줄 조언 (한국어, 60자 이내)" },
+      portion_advice: { type: "string", description: "섭취량 조언 (한국어, 40자 이내)" }
+    },
+    required: ["is_label", "food_name", "confidence", "kcal", "carbs_g", "sugar_g",
+      "sodium_mg", "protein_g", "fat_g", "servings_per_pack", "purine_level",
+      "health_note", "portion_advice"],
+    additionalProperties: false
+  };
+
+  function whoLine(diseases) {
     var dList = (diseases || []).map(function (d) { return DISEASE_KO[d]; }).filter(Boolean);
-    var who = dList.length
+    return dList.length
       ? "사용자는 " + dList.join("·") + " 환자입니다. health_note와 portion_advice는 이 질환 관점에서 작성하세요."
       : "사용자는 특별한 질환이 없는 일반 사용자입니다. health_note와 portion_advice는 일반적인 건강 관리 관점에서 작성하세요.";
+  }
+
+  /** 성분표 사진 판독 요청 (순수 함수) */
+  function buildLabelRequest(base64Jpeg, diseases) {
+    var prompt =
+      "사진 속 영양성분표를 읽어 주세요. 수치는 반드시 1회 제공량 기준으로 환산해 주세요 " +
+      "(표가 100g 기준 또는 총 내용량 기준이면 1회 제공량으로 환산하고, 1회 제공량 정보가 없으면 표에 적힌 값을 그대로). " +
+      "표에 없는 항목은 null로 하세요. 0으로 적지 마세요. " +
+      "제품 종류를 보고 퓨린 등급도 추정하되, 무슨 제품인지 알 수 없으면 unknown으로 하세요. " +
+      whoLine(diseases) + " " +
+      "영양성분표가 보이지 않는 사진이면 is_label을 false로 하세요.";
+    return {
+      model: MODEL,
+      max_tokens: 1500,
+      output_config: { format: { type: "json_schema", schema: LABEL_SCHEMA } },
+      messages: [{
+        role: "user",
+        content: [
+          { type: "image", source: { type: "base64", media_type: "image/jpeg", data: base64Jpeg } },
+          { type: "text", text: prompt }
+        ]
+      }]
+    };
+  }
+
+  /** API 요청 본문 생성 (순수 함수). diseases: ["diabetes",...] — 조언 맞춤용 */
+  function buildFoodRequest(base64Jpeg, diseases) {
     var prompt =
       "사진 속 음식이 무엇인지 알아보고, 사진에 보이는 양 기준 영양성분을 추정해 주세요. " +
       "모든 수치는 대략적인 추정치입니다. 음식이 여러 개면 전체 합으로 추정하세요. " +
-      who + " " +
+      whoLine(diseases) + " " +
       "음식이 아니거나 알아볼 수 없으면 food_name을 \"알 수 없음\", confidence를 \"low\"로 하고 수치는 0으로 하세요.";
     return {
       model: MODEL,
@@ -59,16 +110,19 @@
     };
   }
 
-  /** 응답 텍스트 → 영양 객체 (순수 함수). 실패 시 null */
-  function parseAiReply(text) {
+  function extractJson(text) {
     if (!text || typeof text !== "string") return null;
     var t = text.trim()
       .replace(/^```(?:json)?\s*/i, "")
       .replace(/```\s*$/, "");
     var s = t.indexOf("{"), e = t.lastIndexOf("}");
     if (s === -1 || e === -1 || e <= s) return null;
-    var obj;
-    try { obj = JSON.parse(t.slice(s, e + 1)); } catch (err) { return null; }
+    try { return JSON.parse(t.slice(s, e + 1)); } catch (err) { return null; }
+  }
+
+  /** 응답 텍스트 → 영양 객체 (순수 함수). 실패 시 null */
+  function parseAiReply(text) {
+    var obj = extractJson(text);
     if (!obj || typeof obj.food_name !== "string") return null;
     ["kcal", "carbs_g", "sugar_g", "sodium_mg", "protein_g", "fat_g"].forEach(function (k) {
       var v = Number(obj[k]);
@@ -81,10 +135,29 @@
     return obj;
   }
 
+  /** 성분표 응답 텍스트 → 라벨 객체 (순수 함수). 표에 없는 항목은 null 유지. 실패 시 null */
+  function parseLabelReply(text) {
+    var obj = extractJson(text);
+    if (!obj || typeof obj.food_name !== "string") return null;
+    obj.is_label = obj.is_label === true;
+    ["kcal", "carbs_g", "sugar_g", "sodium_mg", "protein_g", "fat_g", "servings_per_pack"]
+      .forEach(function (k) {
+        if (obj[k] === null || obj[k] === undefined) { obj[k] = null; return; }
+        var v = Number(obj[k]);
+        obj[k] = (isNaN(v) || v < 0) ? null : Math.round(v * 10) / 10;
+      });
+    if (["high", "medium", "low"].indexOf(obj.confidence) === -1) obj.confidence = "low";
+    // 라벨 경로 퓨린은 항상 추측 — 모르면 low(통풍 🟢 안심)가 아니라 unknown(판정 불가)이어야 안전
+    if (["high", "medium", "low", "unknown"].indexOf(obj.purine_level) === -1) obj.purine_level = "unknown";
+    if (typeof obj.health_note !== "string") obj.health_note = "";
+    if (typeof obj.portion_advice !== "string") obj.portion_advice = "";
+    return obj;
+  }
+
   var TIMEOUT_MS = 60000; // 노년층이 스피너에 갇히지 않게 상한
 
-  /** 브라우저 전용: 사진(base64 JPEG) → Claude 비전 분석 */
-  function analyzeFoodImage(base64Jpeg, apiKey, diseases) {
+  /** 브라우저 전용: 요청 본문 → 응답 텍스트 (타임아웃·오류 코드 공통 처리) */
+  function callClaude(reqBody, apiKey) {
     var ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
     var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, TIMEOUT_MS) : null;
     return fetch(API_URL, {
@@ -95,7 +168,7 @@
         "anthropic-version": "2023-06-01",
         "anthropic-dangerous-direct-browser-access": "true"
       },
-      body: JSON.stringify(buildFoodRequest(base64Jpeg, diseases)),
+      body: JSON.stringify(reqBody),
       signal: ctrl ? ctrl.signal : undefined
     }).catch(function (err) {
       if (err && err.name === "AbortError") throw new Error("TIMEOUT");
@@ -110,12 +183,29 @@
     }).then(function (data) {
       if (data.stop_reason === "refusal") throw new Error("REFUSED");
       var textBlock = (data.content || []).filter(function (b) { return b.type === "text"; })[0];
-      var parsed = parseAiReply(textBlock ? textBlock.text : "");
+      return textBlock ? textBlock.text : "";
+    });
+  }
+
+  /** 브라우저 전용: 음식 사진(base64 JPEG) → 영양 추정 */
+  function analyzeFoodImage(base64Jpeg, apiKey, diseases) {
+    return callClaude(buildFoodRequest(base64Jpeg, diseases), apiKey).then(function (text) {
+      var parsed = parseAiReply(text);
+      if (!parsed) throw new Error("PARSE");
+      return parsed;
+    });
+  }
+
+  /** 브라우저 전용: 성분표 사진(base64 JPEG) → 라벨 판독 */
+  function analyzeLabelImage(base64Jpeg, apiKey, diseases) {
+    return callClaude(buildLabelRequest(base64Jpeg, diseases), apiKey).then(function (text) {
+      var parsed = parseLabelReply(text);
       if (!parsed) throw new Error("PARSE");
       return parsed;
     });
   }
 
   return { buildFoodRequest: buildFoodRequest, parseAiReply: parseAiReply,
-    analyzeFoodImage: analyzeFoodImage, MODEL: MODEL };
+    buildLabelRequest: buildLabelRequest, parseLabelReply: parseLabelReply,
+    analyzeFoodImage: analyzeFoodImage, analyzeLabelImage: analyzeLabelImage, MODEL: MODEL };
 });
