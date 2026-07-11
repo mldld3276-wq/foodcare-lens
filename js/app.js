@@ -4,7 +4,7 @@
   "use strict";
 
   // 앱 버전 — 배포할 때마다 올린다. 폰에서 최신 버전이 로드됐는지 확인용.
-  var APP_VERSION = "3.0";
+  var APP_VERSION = "3.1";
 
   var $ = function (id) { return document.getElementById(id); };
   var screens = ["home", "camera", "progress", "manual", "result", "food", "diary",
@@ -163,6 +163,10 @@
       $("camera-guide").textContent = "궁금한 물건을 화면에 비춰 주세요";
       $("camera-hint").textContent = "화면 아무 곳이나 누르면 찍힙니다";
       speak(pre + "궁금한 물건을 화면에 비춰 주세요. 화면 아무 곳이나 누르면 찍힙니다.");
+    } else if (mode === "menu") {
+      $("camera-guide").textContent = "식당 메뉴판을 화면에 비춰 주세요";
+      $("camera-hint").textContent = "화면 아무 곳이나 누르면 찍힙니다";
+      speak(pre + "메뉴판이 잘 보이게 화면에 비춰 주세요. 화면 아무 곳이나 누르면 찍힙니다.");
     } else if (mode === "barcode") {
       $("camera-guide").textContent = "바코드를 네모 칸에 맞춰 주세요";
       $("camera-hint").textContent = (FoodBarcode.scanSupported() && !scanBroken)
@@ -265,6 +269,7 @@
     if (captureMode === "food") runFoodAnalysis(canvas, my);
     else if (captureMode === "barcode") runBarcodePhoto(canvas, my);
     else if (captureMode === "object") runObjectAnalysis(canvas, my);
+    else if (captureMode === "menu") runMenuBoardAnalysis(canvas, my);
     else runLabelOcr(canvas, my);
   }
 
@@ -428,6 +433,53 @@
       if (err && err.detail) m += "\n[상세: " + err.detail + "]";
       showFail("label", m);
     });
+  }
+
+  // ── 식당 메뉴판: 남은 한도·오늘 식단을 고려해 메뉴를 골라준다 ──
+  function runMenuBoardAnalysis(canvas, my) {
+    speak("찍혔습니다. 메뉴판을 읽고 어떤 게 좋을지 고르고 있어요.");
+    $("ocr-progress").textContent = "메뉴판을 읽고 고르는 중이에요…";
+    var scaled = downscale(canvas, 1600); // 메뉴판 글자 판독용
+    var base64 = scaled.toDataURL("image/jpeg", 0.9).split(",")[1];
+    var totals = FoodDiary.sumNutrition(FoodDiary.todayEntries());
+    var remaining = FoodDiary.remainingBudget(totals, profile);
+    var todaySummary = FoodDiary.recentDietSummary(FoodDiary.loadAll(), FoodDiary.todayKey(), 1);
+    FoodAI.analyzeMenuBoard(base64, apiKey(), profile.diseases, remaining, todaySummary)
+      .then(function (r) {
+        if (my !== jobId) return;
+        if (!r.is_menu || !r.picks.length) {
+          showFail("menu", "메뉴판을 알아보지 못했어요.\n글씨가 잘 보이게 다시 찍어 주세요.");
+          return;
+        }
+        renderMenuBoardResult(remaining, r);
+      }).catch(function (err) {
+        if (my !== jobId) return;
+        showFail("menu", aiErrorMsg(err));
+      });
+  }
+
+  function renderMenuBoardResult(remaining, r) {
+    var screen = $("screen-result");
+    screen.classList.remove("green", "yellow", "red", "neutral");
+    screen.classList.add("neutral");
+    $("result-emoji").textContent = "🍴";
+    $("result-label").textContent = "이 식당에서는";
+    var mark = { best: "⭐ 이걸 시키세요", ok: "👍 괜찮아요", avoid: "🚫 피하세요" };
+    var lines = ["오늘 남은 한도 — 당류 " + remaining.sugarG + "g · 나트륨 " +
+      remaining.sodiumMg + "mg · " + remaining.kcal + "kcal", ""];
+    r.picks.forEach(function (p) {
+      lines.push(mark[p.verdict] + ": " + p.name + (p.reason ? " — " + p.reason : ""));
+    });
+    if (r.tip) lines.push("", "💡 " + r.tip);
+    $("result-detail").textContent = lines.join("\n");
+    $("result-disclaimer").textContent = "AI 추천이에요. 메뉴판을 잘못 읽었을 수 있으니 참고만 하세요.";
+    show("result");
+    var best = r.picks.filter(function (p) { return p.verdict === "best"; })[0] || r.picks[0];
+    var avoids = r.picks.filter(function (p) { return p.verdict === "avoid"; })
+      .map(function (p) { return p.name; });
+    speak("이 식당에서는 " + best.name + " 추천이에요. " + (best.reason || "") +
+      (avoids.length ? " " + avoids.join(", ") + " 쪽은 피하시는 게 좋아요." : "") +
+      " 참고만 하세요.");
   }
 
   // ── 물건 알아보기: 찍은 물건이 무엇인지 AI가 설명 ─────────────
@@ -1021,7 +1073,8 @@
   function showFail(mode, customMsg) {
     captureMode = mode; // '다시 찍기'가 같은 모드의 카메라로 이어진다
     var titles = { food: "음식을 분석하지 못했어요", barcode: "바코드를 읽지 못했어요",
-      object: "무엇인지 알아보지 못했어요", label: "성분표를 읽지 못했어요" };
+      object: "무엇인지 알아보지 못했어요", menu: "메뉴판을 읽지 못했어요",
+      label: "성분표를 읽지 못했어요" };
     $("fail-title").textContent = titles[mode] || titles.label;
     if (mode === "label") {
       $("fail-sub").innerHTML = (customMsg
@@ -1132,6 +1185,16 @@
       return;
     }
     startCamera("object");
+  });
+
+  $("btn-restaurant").addEventListener("click", function () {
+    if (!apiKey()) {
+      show("apikey");
+      speak("메뉴판 골라주기에는 AI 설정이 필요해요. API 키를 입력해 주세요.");
+      $("apikey-input").focus();
+      return;
+    }
+    startCamera("menu");
   });
 
   // ── 몸의 신호 확인 (이상징후 문진) ────────────────────────────

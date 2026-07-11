@@ -213,6 +213,59 @@
     return { menus: menus, tip: typeof obj.tip === "string" ? obj.tip.trim() : "" };
   }
 
+  /** 식당 메뉴판 골라주기 프롬프트 (순수 함수) — 남은 한도·오늘 식단 반영 */
+  function menuBoardPrompt(diseases, remaining, todaySummary) {
+    return "사진은 식당 메뉴판(또는 급식표)입니다. 메뉴판에 실제로 적힌 메뉴만 읽고, " +
+      "사용자에게 맞는 선택을 골라 주세요. " + whoLine(diseases) + " " +
+      "오늘 남은 섭취 한도: 당류 " + remaining.sugarG + "g, 나트륨 " + remaining.sodiumMg +
+      "mg, 열량 " + remaining.kcal + "kcal. " +
+      (todaySummary ? "오늘 이미 먹은 것:\n" + todaySummary + "\n" : "오늘은 아직 기록된 식사가 없습니다. ") +
+      "가장 좋은 메뉴 1개(best), 괜찮은 메뉴 1~2개(ok), 피해야 할 메뉴 1~2개(avoid)를 고르고, " +
+      "이유는 남은 한도나 질환과 연결해 한 문장으로 쓰세요. " +
+      "메뉴판이 보이지 않는 사진이면 is_menu를 false로 하세요." +
+      "\n\n반드시 아래 JSON 형식 하나만 출력하세요. 설명·코드펜스 없이 JSON만:\n" +
+      "{\n" +
+      "  \"is_menu\": true 또는 false,\n" +
+      "  \"picks\": [ { \"name\": \"메뉴 이름(메뉴판에 있는 그대로)\",\n" +
+      "               \"verdict\": \"best\" | \"ok\" | \"avoid\",\n" +
+      "               \"reason\": \"이유 한 문장(한국어, 쉬운 존댓말)\" } ],\n" +
+      "  \"tip\": \"주문할 때 팁 한 문장(예: 국물은 남기세요)\"\n" +
+      "}";
+  }
+
+  /** 메뉴판 응답 → {is_menu, picks(best→ok→avoid 정렬), tip} (순수 함수). 실패 시 null */
+  function parseMenuBoardReply(text) {
+    var obj = extractJson(text);
+    if (!obj || !Array.isArray(obj.picks)) {
+      // is_menu:false만 온 경우도 유효한 응답으로 취급
+      if (obj && obj.is_menu === false) return { is_menu: false, picks: [], tip: "" };
+      return null;
+    }
+    var order = { best: 0, ok: 1, avoid: 2 };
+    var picks = obj.picks.filter(function (p) {
+      return p && typeof p.name === "string" && p.name.trim();
+    }).map(function (p) {
+      return {
+        name: p.name.trim(),
+        verdict: order[p.verdict] !== undefined ? p.verdict : "ok",
+        reason: typeof p.reason === "string" ? p.reason.trim() : ""
+      };
+    }).sort(function (a, b) { return order[a.verdict] - order[b.verdict]; }).slice(0, 6);
+    if (obj.is_menu !== false && !picks.length) return null;
+    return { is_menu: obj.is_menu !== false, picks: picks,
+      tip: typeof obj.tip === "string" ? obj.tip.trim() : "" };
+  }
+
+  /** 브라우저 전용: 메뉴판 사진 → 추천/회피 목록 */
+  function analyzeMenuBoard(base64Jpeg, apiKey, diseases, remaining, todaySummary) {
+    return callVision(base64Jpeg, menuBoardPrompt(diseases, remaining, todaySummary), apiKey)
+      .then(function (text) {
+        var parsed = parseMenuBoardReply(text);
+        if (!parsed) throw new Error("PARSE");
+        return parsed;
+      });
+  }
+
   /** 브라우저 전용: 남은 한도 → 메뉴 추천 */
   function suggestMenu(apiKey, diseases, remaining, mealName) {
     return callVision(null, menuPrompt(diseases, remaining, mealName), apiKey)
@@ -416,6 +469,8 @@
     analyzeObjectImage: analyzeObjectImage,
     symptomPrompt: symptomPrompt, parseSymptomReply: parseSymptomReply, analyzeSymptom: analyzeSymptom,
     menuPrompt: menuPrompt, parseMenuReply: parseMenuReply, suggestMenu: suggestMenu,
+    menuBoardPrompt: menuBoardPrompt, parseMenuBoardReply: parseMenuBoardReply,
+    analyzeMenuBoard: analyzeMenuBoard,
     buildGeminiRequest: buildGeminiRequest, parseGeminiText: parseGeminiText,
     detectProvider: detectProvider, foodPrompt: foodPrompt, labelPrompt: labelPrompt,
     analyzeFoodImage: analyzeFoodImage, analyzeLabelImage: analyzeLabelImage,

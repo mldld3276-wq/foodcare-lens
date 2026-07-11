@@ -53,6 +53,47 @@ test("메뉴 파싱: 최대 3개, 이름 없는 항목 제외, 전무하면 null
   assert.equal(parseMenuReply("없음"), null);
 });
 
+// ── 식당 메뉴판 골라주기 ───────────────────────────────────────
+test("메뉴판 프롬프트: 남은 한도·오늘 식단·질환·JSON 지시 포함", () => {
+  const { menuBoardPrompt } = require("../js/ai.js");
+  const p = menuBoardPrompt(["diabetes"], { sugarG: 12, sodiumMg: 300, kcal: 900 },
+    "07/11: 라면 (당 4g·나트륨 1790mg·500kcal)");
+  assert.match(p, /메뉴판/);
+  assert.match(p, /12g/);
+  assert.match(p, /300\s*mg|300mg/);
+  assert.match(p, /라면/);
+  assert.match(p, /당뇨 환자/);
+  assert.match(p, /best/);
+  assert.match(p, /avoid/);
+  // 오늘 기록 없으면 없다고 명시
+  assert.match(menuBoardPrompt([], { sugarG: 1, sodiumMg: 1, kcal: 1 }, ""), /기록된 식사가 없습니다/);
+});
+
+test("메뉴판 파싱: best→ok→avoid 정렬, 이상한 verdict은 ok, 최대 6개", () => {
+  const { parseMenuBoardReply } = require("../js/ai.js");
+  const r = parseMenuBoardReply(JSON.stringify({ is_menu: true, picks: [
+    { name: "제육볶음", verdict: "avoid", reason: "나트륨이 높아요" },
+    { name: "된장찌개", verdict: "best", reason: "남은 한도에 맞아요" },
+    { name: "비빔밥", verdict: "???", reason: "" },
+    { name: "", verdict: "ok" }
+  ], tip: "국물은 남기세요" }));
+  assert.equal(r.picks.length, 3);
+  assert.equal(r.picks[0].verdict, "best");     // 정렬: best 먼저
+  assert.equal(r.picks[0].name, "된장찌개");
+  assert.equal(r.picks[1].verdict, "ok");        // ??? → ok
+  assert.equal(r.picks[2].verdict, "avoid");
+  assert.match(r.tip, /국물/);
+});
+
+test("메뉴판 파싱: is_menu false는 유효, picks 전무+is_menu true는 null", () => {
+  const { parseMenuBoardReply } = require("../js/ai.js");
+  const notMenu = parseMenuBoardReply(JSON.stringify({ is_menu: false }));
+  assert.equal(notMenu.is_menu, false);
+  assert.equal(notMenu.picks.length, 0);
+  assert.equal(parseMenuBoardReply(JSON.stringify({ is_menu: true, picks: [] })), null);
+  assert.equal(parseMenuBoardReply("응답 불가"), null);
+});
+
 test("텍스트 전용 요청: 이미지 없이도 유효한 본문", () => {
   const gem = buildGeminiRequest(null, "질문");
   assert.equal(gem.contents[0].parts.length, 1);
