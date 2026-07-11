@@ -4,7 +4,7 @@
   "use strict";
 
   // 앱 버전 — 배포할 때마다 올린다. 폰에서 최신 버전이 로드됐는지 확인용.
-  var APP_VERSION = "2.5";
+  var APP_VERSION = "2.6";
 
   var $ = function (id) { return document.getElementById(id); };
   var screens = ["home", "camera", "progress", "manual", "result", "food", "diary",
@@ -1098,6 +1098,28 @@
     $("apikey-input").value = apiKey();
     updateProviderHint();
     show("apikey");
+  });
+
+  // 정보 초기화 — 프로필·식단·뽑기 기록을 모두 지운다 (AI 키는 유지)
+  $("btn-reset").addEventListener("click", function () {
+    if (profile.childMode) {
+      speak("아이 모드에서는 초기화할 수 없어요. 먼저 부모 모드로 바꿔 주세요.");
+      return;
+    }
+    if (!window.confirm("모든 정보를 지울까요?\n\n- 질환·키·몸무게 설정\n- 식단 기록 전체\n- 뽑기권과 뽑기 기록\n\n지운 정보는 되돌릴 수 없어요. (AI 키는 유지됩니다)")) return;
+    var word = window.prompt("정말 지우시려면 '초기화'라고 입력하세요:", "");
+    if (word == null || String(word).trim() !== "초기화") {
+      if (word != null) speak("입력이 달라 초기화를 취소했어요.");
+      return;
+    }
+    try {
+      ["fc_profile_v1", "fc_diary_v1", "fc_tickets", "fc_draw_log",
+        "fc_disclaimer_done", "fc_caption_collapsed"].forEach(function (k) {
+        localStorage.removeItem(k);
+      });
+    } catch (e) { /* ignore */ }
+    speak("모든 정보를 지웠어요. 처음부터 다시 시작합니다.");
+    setTimeout(function () { location.reload(); }, 1500); // 안내가 들리도록 잠시 후 새로고침
   });
 
   $("screen-camera").addEventListener("click", captureAndRecognize);
