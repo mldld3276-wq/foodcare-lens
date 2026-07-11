@@ -152,6 +152,33 @@ test("평가(당뇨): byDisease에 당뇨 위험 기록", () => {
   assert.equal(r.byDisease.diabetes, "risk");
 });
 
+// ── 문진용 식단 요약 + 남은 한도 ──────────────────────────────
+test("식단 요약: 최근 3일 음식명·합계 포함, 기록 없으면 빈 문자열", () => {
+  const all = {
+    "2026-07-11": [MEAL({ food_name: "김치찌개", sugar_g: 5, sodium_mg: 1500 })],
+    "2026-07-10": [MEAL({ food_name: "비빔밥" }), MEAL({ food_name: "우유" })],
+    "2026-07-05": [MEAL({ food_name: "옛날음식" })] // 3일 밖 — 제외
+  };
+  const s = require("../js/diary.js").recentDietSummary(all, "2026-07-11", 3);
+  assert.match(s, /07\/11.*김치찌개/);
+  assert.match(s, /비빔밥, 우유/);
+  assert.match(s, /나트륨 1500mg/);
+  assert.doesNotMatch(s, /옛날음식/);
+  assert.equal(require("../js/diary.js").recentDietSummary({}, "2026-07-11", 3), "");
+});
+
+test("남은 한도: 한도-섭취, 음수는 0", () => {
+  const t = sumNutrition([MEAL({ sugar_g: 10, sodium_mg: 1500, kcal: 800 })]);
+  const r = require("../js/diary.js").remainingBudget(t, P(["diabetes"]));
+  assert.equal(r.sugarG, 15);       // 25 - 10
+  assert.equal(r.sodiumMg, 500);    // 2000 - 1500
+  assert.ok(r.kcal > 0);
+  // 초과 섭취 → 0
+  const over = require("../js/diary.js").remainingBudget(
+    sumNutrition([MEAL({ sugar_g: 40 })]), P(["diabetes"]));
+  assert.equal(over.sugarG, 0);
+});
+
 // ── 출석 도장 달력 ────────────────────────────────────────────
 test("월 달력: 앞 빈칸 + 기록 있는 날 has=true", () => {
   const all = { "2026-07-10": [MEAL()], "2026-07-15": [MEAL({ sugar_g: 40 })] };

@@ -1,8 +1,63 @@
 const test = require("node:test");
 const assert = require("node:assert");
 const { buildFoodRequest, parseAiReply, buildLabelRequest, parseLabelReply,
-  buildGeminiRequest, parseGeminiText, detectProvider, foodPrompt, labelPrompt, MODEL }
+  buildGeminiRequest, parseGeminiText, detectProvider, foodPrompt, labelPrompt,
+  symptomPrompt, parseSymptomReply, menuPrompt, parseMenuReply, MODEL }
   = require("../js/ai.js");
+
+// ── 이상징후 문진 (진단 아님 — 3단계 안내) ─────────────────────
+test("문진 프롬프트: 진단 금지·보수적 판정·식단·증상 포함", () => {
+  const p = symptomPrompt("소변 색이 진해요", ["diabetes"], "7/11: 김치찌개 (당 5g)");
+  assert.match(p, /진단하지 말/);
+  assert.match(p, /안전한.*단계/);
+  assert.match(p, /소변 색이 진해요/);
+  assert.match(p, /김치찌개/);
+  assert.match(p, /당뇨 환자/);
+  assert.match(p, /emergency/);
+  // 식단 없으면 없다고 명시
+  assert.match(symptomPrompt("어지러워요", [], ""), /기록은 없습니다/);
+});
+
+test("문진 파싱: 3단계 유효, 이상한 level은 보수적으로 doctor", () => {
+  const ok = parseSymptomReply(JSON.stringify({
+    level: "watch", reason: "일시적일 수 있어요", advice: "물을 드세요", watch_for: "열이 나면"
+  }));
+  assert.equal(ok.level, "watch");
+  assert.match(ok.advice, /물/);
+  const weird = parseSymptomReply(JSON.stringify({ level: "maybe", reason: "설명" }));
+  assert.equal(weird.level, "doctor"); // 애매하면 병원 권유
+  assert.equal(parseSymptomReply("모름"), null);
+});
+
+// ── 오늘의 메뉴 추천 ───────────────────────────────────────────
+test("메뉴 프롬프트: 남은 한도 수치와 끼니 포함", () => {
+  const p = menuPrompt(["hypertension"], { sugarG: 20, sodiumMg: 500, kcal: 800 }, "저녁");
+  assert.match(p, /20g/);
+  assert.match(p, /500\s*mg|500mg/);
+  assert.match(p, /800kcal|800\s*kcal/);
+  assert.match(p, /저녁/);
+  assert.match(p, /고혈압 환자/);
+});
+
+test("메뉴 파싱: 최대 3개, 이름 없는 항목 제외, 전무하면 null", () => {
+  const r = parseMenuReply(JSON.stringify({ menus: [
+    { name: "된장국과 현미밥", reason: "나트륨이 적어요" },
+    { name: "", reason: "x" },
+    { name: "두부조림" }, { name: "A" }, { name: "B" }
+  ], tip: "국물은 남기세요" }));
+  assert.equal(r.menus.length, 3);
+  assert.equal(r.menus[0].name, "된장국과 현미밥");
+  assert.equal(r.menus[1].reason, "");
+  assert.match(r.tip, /국물/);
+  assert.equal(parseMenuReply(JSON.stringify({ menus: [] })), null);
+  assert.equal(parseMenuReply("없음"), null);
+});
+
+test("텍스트 전용 요청: 이미지 없이도 유효한 본문", () => {
+  const gem = buildGeminiRequest(null, "질문");
+  assert.equal(gem.contents[0].parts.length, 1);
+  assert.equal(gem.contents[0].parts[0].text, "질문");
+});
 
 // ── 제공자 자동 감지 (sk-ant만 Claude, 나머지는 Gemini) ────────
 test("제공자 감지: Claude는 sk-ant 접두사만, 나머지 Google 키 형식은 전부 Gemini", () => {

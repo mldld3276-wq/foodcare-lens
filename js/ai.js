@@ -34,16 +34,17 @@
   // 구조화 출력(output_config.format)은 브라우저 직접 호출에서 형식 불일치로 400을 내므로
   // 사용하지 않고, 프롬프트에서 JSON 형식을 지시한 뒤 파서가 방어적으로 추출한다.
   function visionRequest(base64Jpeg, prompt) {
-    return {
-      model: MODEL,
-      max_tokens: 1500,
-      messages: [{
-        role: "user",
-        content: [
+    // base64Jpeg가 없으면 텍스트 전용 요청 (문진·메뉴 추천 등)
+    var content = base64Jpeg
+      ? [
           { type: "image", source: { type: "base64", media_type: "image/jpeg", data: base64Jpeg } },
           { type: "text", text: prompt }
         ]
-      }]
+      : prompt;
+    return {
+      model: MODEL,
+      max_tokens: 1500,
+      messages: [{ role: "user", content: content }]
     };
   }
 
@@ -141,15 +142,95 @@
     };
   }
 
-  /** Gemini 요청 본문 (순수 함수). thinkingBudget 0으로 추론 끄고 JSON만 받는다 */
-  function buildGeminiRequest(base64Jpeg, prompt) {
+  /** 이상징후 문진 프롬프트 (순수 함수) — 진단 금지, 3단계 안내, 보수적 판정 */
+  function symptomPrompt(symptom, diseases, dietSummary) {
+    return "당신은 의료 안내 도우미입니다. 절대 병명을 진단하지 말고, " +
+      "지금 병원에 가야 할 신호인지 3단계 중 하나로만 안내하세요: " +
+      "emergency(즉시 응급실), doctor(1~2일 내 병원 진료 권함), watch(집에서 지켜보기). " +
+      "판단이 애매하면 반드시 더 안전한(윗) 단계를 고르세요. " +
+      whoLine(diseases) + " " +
+      (dietSummary ? "최근 식단 기록:\n" + dietSummary + "\n" : "최근 식단 기록은 없습니다. ") +
+      "사용자가 말한 증상: \"" + symptom + "\"" +
+      "\n\n반드시 아래 JSON 형식 하나만 출력하세요. 설명·코드펜스 없이 JSON만:\n" +
+      "{\n" +
+      "  \"level\": \"emergency\" | \"doctor\" | \"watch\",\n" +
+      "  \"reason\": \"증상과 식단의 연관 가능성 설명(한국어 1~2문장, '~일 수 있어요'처럼 단정 금지)\",\n" +
+      "  \"advice\": \"지금 할 일(한국어 1~2문장, 쉬운 존댓말)\",\n" +
+      "  \"watch_for\": \"이런 신호가 생기면 바로 병원(한국어 한 문장)\"\n" +
+      "}";
+  }
+
+  /** 문진 응답 → {level, reason, advice, watch_for} (순수 함수).
+      level이 이상하면 보수적으로 doctor. JSON 아니면 null */
+  function parseSymptomReply(text) {
+    var obj = extractJson(text);
+    if (!obj || typeof obj.reason !== "string") return null;
+    var level = ["emergency", "doctor", "watch"].indexOf(obj.level) !== -1
+      ? obj.level : "doctor"; // 애매하면 병원 권유가 안전
     return {
-      contents: [{
-        parts: [
-          { inline_data: { mime_type: "image/jpeg", data: base64Jpeg } },
-          { text: prompt }
-        ]
-      }],
+      level: level,
+      reason: obj.reason.trim(),
+      advice: typeof obj.advice === "string" ? obj.advice.trim() : "",
+      watch_for: typeof obj.watch_for === "string" ? obj.watch_for.trim() : ""
+    };
+  }
+
+  /** 브라우저 전용: 증상 + 최근 식단 → 3단계 안내 */
+  function analyzeSymptom(symptom, apiKey, diseases, dietSummary) {
+    return callVision(null, symptomPrompt(symptom, diseases, dietSummary), apiKey)
+      .then(function (text) {
+        var parsed = parseSymptomReply(text);
+        if (!parsed) throw new Error("PARSE");
+        return parsed;
+      });
+  }
+
+  /** 오늘의 메뉴 추천 프롬프트 (순수 함수) — 남은 한도 안에서 */
+  function menuPrompt(diseases, remaining, mealName) {
+    return whoLine(diseases) + " " +
+      "오늘 남은 섭취 한도는 당류 " + remaining.sugarG + "g, 나트륨 " + remaining.sodiumMg +
+      "mg, 열량 " + remaining.kcal + "kcal입니다. " +
+      "이 한도 안에서 " + mealName + "(으)로 먹기 좋은 한국 가정식 메뉴 2가지를 추천하세요. " +
+      "구하기 쉽고 만들기 쉬운 것으로요." +
+      "\n\n반드시 아래 JSON 형식 하나만 출력하세요. 설명·코드펜스 없이 JSON만:\n" +
+      "{\n" +
+      "  \"menus\": [ { \"name\": \"메뉴 이름\", \"reason\": \"남은 한도와 연결한 이유(한 문장)\" } ],\n" +
+      "  \"tip\": \"조리·섭취 팁 한 문장\"\n" +
+      "}";
+  }
+
+  /** 메뉴 응답 → {menus:[{name,reason}], tip} (순수 함수). 유효 메뉴 없으면 null */
+  function parseMenuReply(text) {
+    var obj = extractJson(text);
+    if (!obj || !Array.isArray(obj.menus)) return null;
+    var menus = obj.menus.filter(function (m) {
+      return m && typeof m.name === "string" && m.name.trim();
+    }).slice(0, 3).map(function (m) {
+      return { name: m.name.trim(),
+        reason: typeof m.reason === "string" ? m.reason.trim() : "" };
+    });
+    if (!menus.length) return null;
+    return { menus: menus, tip: typeof obj.tip === "string" ? obj.tip.trim() : "" };
+  }
+
+  /** 브라우저 전용: 남은 한도 → 메뉴 추천 */
+  function suggestMenu(apiKey, diseases, remaining, mealName) {
+    return callVision(null, menuPrompt(diseases, remaining, mealName), apiKey)
+      .then(function (text) {
+        var parsed = parseMenuReply(text);
+        if (!parsed) throw new Error("PARSE");
+        return parsed;
+      });
+  }
+
+  /** Gemini 요청 본문 (순수 함수). thinkingBudget 0으로 추론 끄고 JSON만 받는다.
+      base64Jpeg가 없으면 텍스트 전용 요청. */
+  function buildGeminiRequest(base64Jpeg, prompt) {
+    var parts = base64Jpeg
+      ? [{ inline_data: { mime_type: "image/jpeg", data: base64Jpeg } }, { text: prompt }]
+      : [{ text: prompt }];
+    return {
+      contents: [{ parts: parts }],
       generationConfig: {
         temperature: 0.2,
         maxOutputTokens: 2048,
@@ -333,6 +414,8 @@
     buildBarcodeRequest: buildBarcodeRequest, parseBarcodeReply: parseBarcodeReply,
     buildObjectRequest: buildObjectRequest, parseObjectReply: parseObjectReply,
     analyzeObjectImage: analyzeObjectImage,
+    symptomPrompt: symptomPrompt, parseSymptomReply: parseSymptomReply, analyzeSymptom: analyzeSymptom,
+    menuPrompt: menuPrompt, parseMenuReply: parseMenuReply, suggestMenu: suggestMenu,
     buildGeminiRequest: buildGeminiRequest, parseGeminiText: parseGeminiText,
     detectProvider: detectProvider, foodPrompt: foodPrompt, labelPrompt: labelPrompt,
     analyzeFoodImage: analyzeFoodImage, analyzeLabelImage: analyzeLabelImage,

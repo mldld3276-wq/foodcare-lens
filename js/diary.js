@@ -286,6 +286,33 @@
     return n;
   }
 
+  /** 최근 며칠 식단을 AI 문진용 한글 요약으로 (순수 함수). 기록 없으면 "" */
+  function recentDietSummary(allByDate, endKey, days) {
+    var n = days || 3;
+    var lines = [];
+    for (var i = 0; i < n; i++) {
+      var key = addDaysKey(endKey, -i);
+      var entries = allByDate[key] || [];
+      if (!entries.length) continue;
+      var t = sumNutrition(entries);
+      var names = entries.map(function (e) { return e.food_name; }).filter(Boolean).slice(0, 6);
+      lines.push(key.slice(5).replace("-", "/") + ": " + names.join(", ") +
+        " (당 " + t.sugar_g + "g·나트륨 " + Math.round(t.sodium_mg) + "mg·" + Math.round(t.kcal) + "kcal)");
+    }
+    return lines.join("\n");
+  }
+
+  /** 오늘 남은 한도 (순수 함수) — 메뉴 추천용. 음수는 0으로 */
+  function remainingBudget(totals, profile) {
+    var limits = evaluateDiet(totals, profile).limits;
+    function left(limit, used) { return Math.max(0, Math.round((limit - (Number(used) || 0)) * 10) / 10); }
+    return {
+      sugarG: left(limits.sugarG, totals.sugar_g),
+      sodiumMg: Math.round(left(limits.sodiumMg, totals.sodium_mg)),
+      kcal: Math.round(left(limits.kcal, totals.kcal))
+    };
+  }
+
   /** 주간 요약 (순수 함수): endKey 포함 최근 7일 [{key, weekday, count, level}] */
   function weekSummary(allByDate, endKey, profile) {
     var out = [];
@@ -332,6 +359,7 @@
     sumNutrition: sumNutrition, evaluateDiet: evaluateDiet, DAILY: DAILY,
     kcalToBowls: kcalToBowls, guessMealType: guessMealType,
     bmi: bmi, dailyKcalTarget: dailyKcalTarget, bowlsGuide: bowlsGuide, kcalSummary: kcalSummary,
+    recentDietSummary: recentDietSummary, remainingBudget: remainingBudget,
     monthGrid: monthGrid, streakCount: streakCount, monthStampCount: monthStampCount,
     MEAL_TYPES: MEAL_TYPES, MEAL_KO: MEAL_KO, MEAL_ICON: MEAL_ICON,
     dateToKey: dateToKey, todayKey: todayKey, addDaysKey: addDaysKey, weekSummary: weekSummary,

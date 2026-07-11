@@ -4,11 +4,11 @@
   "use strict";
 
   // 앱 버전 — 배포할 때마다 올린다. 폰에서 최신 버전이 로드됐는지 확인용.
-  var APP_VERSION = "2.6";
+  var APP_VERSION = "3.0";
 
   var $ = function (id) { return document.getElementById(id); };
   var screens = ["home", "camera", "progress", "manual", "result", "food", "diary",
-    "wheel", "winner", "apikey", "fail"];
+    "wheel", "winner", "symptom", "apikey", "fail"];
 
   // A등급 당첨자를 여러 이용자에게서 모으려면 중앙 저장소가 필요.
   // 아래 구글 폼 정보를 채우면 A 당첨 시 이름·전화번호를 구글 시트로도 전송한다.
@@ -463,8 +463,23 @@
     $("result-emoji").textContent = "🔍";
     $("result-label").textContent = obj.name;
     $("result-detail").textContent = obj.description || "";
+    $("result-disclaimer").textContent = "AI 추정이에요. 참고만 하세요.";
     show("result");
     speak(withRo(obj.name) + " 보여요. " + (obj.description || "") + " 추정이므로 참고만 하세요.");
+  }
+
+  /** AI 오류 → 사용자 문구 (공용) */
+  function aiErrorMsg(err) {
+    var msg = {
+      AUTH: "API 키가 올바르지 않아요. AI 설정에서 키를 확인해 주세요.",
+      RATE: "요청이 너무 많아요. 잠시 후 다시 시도해 주세요.",
+      OVERLOADED: "AI 서버가 붐벼요. 잠시 후 다시 시도해 주세요.",
+      TIMEOUT: "응답이 너무 오래 걸려 중단했어요. 다시 시도해 주세요.",
+      REFUSED: "이 내용은 분석할 수 없어요.",
+      PARSE: "결과를 읽지 못했어요. 다시 시도해 주세요."
+    }[err && err.message] || "실패했어요 (원인: " + (err && err.message) + "). 다시 시도해 주세요.";
+    if (err && err.detail) msg += " [상세: " + err.detail + "]";
+    return msg;
   }
 
   // ── 음식 AI 분석 경로 ────────────────────────────────────────
@@ -879,8 +894,56 @@
     $("result-emoji").textContent = emoji;
     $("result-label").textContent = label;
     $("result-detail").textContent = detail;
+    $("result-disclaimer").textContent = "참고용 안내입니다. 1회 제공량 기준입니다.";
     show("result");
     speak(speech);
+  }
+
+  /** 문진 결과 — 응급/병원 권유/관찰 3단계 (진단 아님) */
+  function renderSymptomResult(res) {
+    var map = {
+      emergency: { cls: "red", emoji: "🚨", label: "응급",
+        head: "지금 바로 병원 응급실로 가시거나 119에 전화하세요." },
+      doctor: { cls: "yellow", emoji: "🏥", label: "병원 권유",
+        head: "1~2일 안에 병원 진료를 받아 보세요." },
+      watch: { cls: "green", emoji: "👀", label: "관찰",
+        head: "집에서 지켜보셔도 괜찮아 보여요." }
+    };
+    var m = map[res.level] || map.doctor;
+    var screen = $("screen-result");
+    screen.classList.remove("green", "yellow", "red", "neutral");
+    screen.classList.add(m.cls);
+    $("result-emoji").textContent = m.emoji;
+    $("result-label").textContent = m.label;
+    $("result-detail").textContent = m.head + "\n\n" + res.reason +
+      (res.advice ? "\n\n💡 " + res.advice : "") +
+      (res.watch_for ? "\n\n⚠️ 이러면 바로 병원: " + res.watch_for : "");
+    $("result-disclaimer").textContent =
+      "진단이 아닌 참고용 안내입니다. 증상이 심하면 안내를 기다리지 말고 바로 병원으로 가세요.";
+    show("result");
+    speak(m.head + " " + res.reason + " " + (res.advice || "") +
+      " 이 안내는 진단이 아니에요. 최종 판단은 의사 선생님께 받으세요.");
+  }
+
+  /** 오늘의 메뉴 추천 결과 */
+  function renderMenuResult(remaining, mealName, r) {
+    var screen = $("screen-result");
+    screen.classList.remove("green", "yellow", "red", "neutral");
+    screen.classList.add("neutral");
+    $("result-emoji").textContent = "🍽️";
+    $("result-label").textContent = mealName + " 추천";
+    var lines = ["오늘 남은 한도 — 당류 " + remaining.sugarG + "g · 나트륨 " +
+      remaining.sodiumMg + "mg · " + remaining.kcal + "kcal", ""];
+    r.menus.forEach(function (menu) {
+      lines.push("🍚 " + menu.name + (menu.reason ? " — " + menu.reason : ""));
+    });
+    if (r.tip) lines.push("", "💡 " + r.tip);
+    $("result-detail").textContent = lines.join("\n");
+    $("result-disclaimer").textContent = "AI 추천이에요. 참고만 하세요.";
+    show("result");
+    var first = r.menus[0];
+    speak(mealName + "로 " + first.name + "를 추천해요. " + (first.reason || "") +
+      (r.menus[1] ? " " + r.menus[1].name + "도 좋아요." : "") + " 참고만 하세요.");
   }
 
   function showJudgement(sugarG, servingsPerPack, sodiumMg) {
@@ -1069,6 +1132,69 @@
       return;
     }
     startCamera("object");
+  });
+
+  // ── 몸의 신호 확인 (이상징후 문진) ────────────────────────────
+  $("btn-symptom").addEventListener("click", function () {
+    if (!apiKey()) {
+      show("apikey");
+      speak("몸의 신호 확인에는 AI 설정이 필요해요. API 키를 입력해 주세요.");
+      $("apikey-input").focus();
+      return;
+    }
+    $("symptom-input").value = "";
+    show("symptom");
+    speak("요즘 몸에 이상한 신호가 있나요? 증상을 적거나 버튼을 눌러 주세요.");
+  });
+  [].forEach.call(document.querySelectorAll(".schip"), function (btn) {
+    btn.addEventListener("click", function () {
+      var box = $("symptom-input");
+      box.value = (box.value ? box.value + " " : "") + btn.textContent;
+    });
+  });
+  $("btn-symptom-back").addEventListener("click", function () { show("home"); });
+  $("btn-symptom-ok").addEventListener("click", function () {
+    var symptom = $("symptom-input").value.trim();
+    if (!symptom) { speak("증상을 먼저 적어 주세요."); return; }
+    show("progress");
+    $("ocr-progress").textContent = "최근 식단과 함께 살펴보고 있어요…";
+    speak("최근 드신 것과 함께 살펴보고 있어요. 잠시만요.");
+    var my = ++jobId;
+    var summary = FoodDiary.recentDietSummary(FoodDiary.loadAll(), FoodDiary.todayKey(), 3);
+    FoodAI.analyzeSymptom(symptom, apiKey(), profile.diseases, summary).then(function (res) {
+      if (my !== jobId) return;
+      renderSymptomResult(res);
+    }).catch(function (err) {
+      if (my !== jobId) return;
+      show("symptom");
+      speak(aiErrorMsg(err));
+    });
+  });
+
+  // ── 오늘의 메뉴 추천 ─────────────────────────────────────────
+  $("btn-menu").addEventListener("click", function () {
+    if (!apiKey()) {
+      show("apikey");
+      speak("메뉴 추천에는 AI 설정이 필요해요. API 키를 입력해 주세요.");
+      $("apikey-input").focus();
+      return;
+    }
+    var totals = FoodDiary.sumNutrition(FoodDiary.todayEntries());
+    var remaining = FoodDiary.remainingBudget(totals, profile);
+    var h = new Date().getHours();
+    var mealName = h < 10 ? "아침" : h < 15 ? "점심" : "저녁";
+    show("progress");
+    $("ocr-progress").textContent = "남은 한도에 맞는 메뉴를 고르고 있어요…";
+    speak("오늘 남은 한도에 맞는 " + mealName + " 메뉴를 고르고 있어요.");
+    var my = ++jobId;
+    FoodAI.suggestMenu(apiKey(), profile.diseases, remaining, mealName).then(function (r) {
+      if (my !== jobId) return;
+      renderMenuResult(remaining, mealName, r);
+    }).catch(function (err) {
+      if (my !== jobId) return;
+      renderDiary(FoodDiary.todayKey());
+      speak(aiErrorMsg(err));
+    });
   });
   $("btn-diary").addEventListener("click", function () {
     var evalr = renderDiary(FoodDiary.todayKey());
