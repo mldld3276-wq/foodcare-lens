@@ -4,7 +4,7 @@
   "use strict";
 
   // 앱 버전 — 배포할 때마다 올린다. 폰에서 최신 버전이 로드됐는지 확인용.
-  var APP_VERSION = "3.2";
+  var APP_VERSION = "3.3";
 
   var $ = function (id) { return document.getElementById(id); };
   var screens = ["home", "camera", "progress", "manual", "result", "food", "diary",
@@ -802,7 +802,7 @@
         "<span class='big" + (ks.over ? " over" : "") + "'>" + ks.consumed.toLocaleString() + "</span></div>" +
         "<div class='kcal-bar'><div class='kcal-fill" + (ks.over ? " over" : "") +
         "' style='width:" + ks.barPct + "%'></div></div>" +
-        "<div style='text-align:right; font-size:0.9rem; color:#666; margin-top:4px;'>권장 " +
+        "<div style='text-align:right; font-size:0.9rem; color:#8B99AB; margin-top:4px;'>권장 " +
         ks.target.toLocaleString() + " kcal 중 " + ks.pct + "%" +
         (ks.over ? " · 권장을 넘었어요" : "") + "</div>";
     } else {

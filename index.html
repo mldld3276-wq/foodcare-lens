@@ -3,21 +3,24 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="theme-color" content="#1F6F3D">
+<meta name="theme-color" content="#0B0F14">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
 <title>푸드케어 렌즈</title>
 <style>
   :root {
-    --green: #1E8449; --yellow: #B7950B; --red: #C0392B;
-    --bg: #F7FAF7; --fg: #111111; --accent: #1F6F3D; --card: #FFFFFF;
+    --bg: #0B0F14; --card: #151B23; --card2: #1C242E; --border: #273140;
+    --fg: #EDF2F7; --muted: #8B99AB;
+    --accent: #3DDC97; --accent-ink: #062018;
+    --green: #22C55E; --yellow: #CA8A04; --red: #E5484D;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { height: 100%; }
   body {
-    font-family: "맑은 고딕", "Malgun Gothic", sans-serif;
-    background: var(--bg); color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "맑은 고딕", "Malgun Gothic", sans-serif;
+    background: radial-gradient(1100px 480px at 50% -12%, #12241C 0%, var(--bg) 55%) fixed, var(--bg);
+    color: var(--fg);
     display: flex; flex-direction: column;
   }
   .screen { display: none; flex: 1; flex-direction: column; align-items: center;
@@ -26,20 +29,24 @@
   .screen.active { display: flex; }
   .center { justify-content: center; }
 
-  h1 { font-size: 1.8rem; color: var(--accent); }
-  .sub { font-size: 1.1rem; color: #444; line-height: 1.5; }
-  .card { background: var(--card); border-radius: 16px; padding: 14px 16px;
-    width: 100%; max-width: 440px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
+  h1 { font-size: 1.8rem; color: var(--fg); letter-spacing: -0.5px; }
+  .sub { font-size: 1.1rem; color: var(--muted); line-height: 1.5; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 18px;
+    padding: 14px 16px; width: 100%; max-width: 440px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.35); }
 
   .bigbtn {
-    width: 100%; max-width: 440px; padding: 20px;
-    font-size: 1.4rem; font-weight: bold; font-family: inherit;
-    border: none; border-radius: 18px; cursor: pointer;
-    background: var(--accent); color: #fff;
+    width: 100%; max-width: 440px; padding: 19px;
+    font-size: 1.35rem; font-weight: 800; font-family: inherit;
+    border: none; border-radius: 16px; cursor: pointer;
+    background: var(--accent); color: var(--accent-ink);
+    box-shadow: 0 4px 16px rgba(61,220,151,0.22);
+    transition: transform .06s ease, filter .15s ease;
   }
-  .bigbtn.secondary { background: #E8F1EA; color: var(--accent); }
+  .bigbtn.secondary { background: var(--card2); color: var(--fg);
+    border: 1px solid var(--border); box-shadow: none; }
   .bigbtn.small { padding: 13px; font-size: 1.05rem; }
-  .bigbtn:active { transform: scale(0.98); }
+  .bigbtn:active { transform: scale(0.98); filter: brightness(1.08); }
   .btnrow { display: flex; gap: 10px; width: 100%; max-width: 440px; }
   .btnrow .bigbtn { flex: 1; }
 
@@ -47,10 +54,10 @@
   .chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
   .dchip {
     padding: 10px 16px; border-radius: 999px; font-size: 1.05rem; font-weight: bold;
-    border: 2px solid #C8D8CC; background: #fff; color: #666; cursor: pointer;
-    font-family: inherit;
+    border: 1.5px solid var(--border); background: var(--card2); color: var(--muted);
+    cursor: pointer; font-family: inherit;
   }
-  .dchip.on { border-color: var(--accent); background: var(--accent); color: #fff; }
+  .dchip.on { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); }
 
   /* 카메라 화면 */
   #screen-camera { padding: 0; position: relative; background: #000; }
@@ -60,180 +67,199 @@
     justify-content: space-between; align-items: center; padding: 32px 16px 110px;
     color: #fff; z-index: 2;
   }
-  #camera-guide { background: rgba(0,0,0,0.65); padding: 14px 22px; border-radius: 14px;
+  #camera-guide { background: rgba(0,0,0,0.7); padding: 14px 22px; border-radius: 14px;
     font-size: 1.3rem; font-weight: bold; }
-  #camera-hint { background: rgba(0,0,0,0.65); padding: 14px 22px; border-radius: 14px;
+  #camera-hint { background: rgba(0,0,0,0.7); padding: 14px 22px; border-radius: 14px;
     font-size: 1.1rem; }
 
-  .spinner { width: 64px; height: 64px; border: 8px solid #E8F1EA;
+  .spinner { width: 64px; height: 64px; border: 8px solid var(--card2);
     border-top-color: var(--accent); border-radius: 50%;
     animation: spin 1s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  #ocr-progress { font-size: 1.2rem; }
+  #ocr-progress { font-size: 1.2rem; color: var(--fg); }
 
-  /* 결과 화면 (성분표) */
-  #screen-result.green  { background: var(--green);  color: #fff; }
-  #screen-result.yellow { background: var(--yellow); color: #fff; }
-  #screen-result.red    { background: var(--red);    color: #fff; }
-  #screen-result.neutral { background: #1A5276; color: #fff; } /* 물건 알아보기 등 판정 아님 */
+  /* 결과 화면 (성분표 신호등 / 문진 / 추천 공용) */
+  #screen-result.green  { background: #14532D; color: #fff; }
+  #screen-result.yellow { background: #92400E; color: #fff; }
+  #screen-result.red    { background: #991B1B; color: #fff; }
+  #screen-result.neutral { background: #1E3A8A; color: #fff; }
   #result-emoji { font-size: 4.6rem; line-height: 1; margin-top: 24px; }
   #result-label { font-size: 2.8rem; font-weight: 900; }
   #result-detail { font-size: 1.35rem; line-height: 1.6; max-width: 480px; white-space: pre-line; }
-  #screen-result .bigbtn { background: rgba(255,255,255,0.92); color: #111; }
-  #screen-result .disclaimer { color: rgba(255,255,255,0.85); }
+  #screen-result .bigbtn { background: rgba(255,255,255,0.95); color: #0B0F14; box-shadow: none; }
+  #screen-result .disclaimer { color: rgba(255,255,255,0.8); }
 
   /* 음식 AI 결과 화면 */
   #food-name { font-size: 2.1rem; font-weight: 900; color: var(--accent); }
-  #food-confidence { font-size: 0.95rem; color: #888; }
+  #food-confidence { font-size: 0.95rem; color: var(--muted); }
   .verdicts { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
   .vchip { display: inline-flex; align-items: center; gap: 6px;
     padding: 8px 14px; border-radius: 12px; font-size: 1.02rem; font-weight: bold; color: #fff; }
-  .vchip.green { background: var(--green); } .vchip.yellow { background: var(--yellow); }
-  .vchip.red { background: var(--red); } .vchip.unknown { background: #999; }
-  #food-portion { font-size: 1.25rem; }
+  .vchip.green { background: #16A34A; } .vchip.yellow { background: var(--yellow); }
+  .vchip.red { background: #DC2626; } .vchip.unknown { background: #4B5563; }
+  #food-portion { font-size: 1.25rem; color: var(--fg); }
   #food-portion .bowls { font-size: 1.7rem; letter-spacing: 2px; }
-  #food-advice { font-size: 1.15rem; font-weight: bold; color: var(--accent);
-    background: #E8F1EA; padding: 10px 16px; border-radius: 12px; max-width: 440px; }
+  #food-advice { font-size: 1.15rem; font-weight: bold; color: #7CE7B9;
+    background: #10281F; border: 1px solid #1B4433;
+    padding: 10px 16px; border-radius: 12px; max-width: 440px; }
   table.nutri { border-collapse: collapse; width: 100%; max-width: 440px; font-size: 1.05rem;
-    background: #fff; border-radius: 12px; overflow: hidden; }
-  table.nutri td { padding: 8px 14px; border-bottom: 1px solid #EEF3EF; text-align: left; }
+    background: var(--card); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+  table.nutri td { padding: 9px 14px; border-bottom: 1px solid var(--border); text-align: left;
+    color: var(--muted); }
   table.nutri tr:last-child td { border-bottom: none; }
-  table.nutri td:last-child { text-align: right; font-weight: bold; }
-  #food-note { font-size: 1rem; color: #555; max-width: 440px; line-height: 1.5; }
+  table.nutri td:last-child { text-align: right; font-weight: bold; color: var(--fg); }
+  #food-note { font-size: 1rem; color: var(--muted); max-width: 440px; line-height: 1.5; }
   /* 많이 드시면 주의 — 영양소별 과다 위험 */
-  .food-warnings { width: 100%; max-width: 440px; background: #FFF3E0; border: 2px solid #E67E22;
-    border-radius: 12px; padding: 12px 14px; text-align: left; }
+  .food-warnings { width: 100%; max-width: 440px; background: #241505; border: 1px solid #92400E;
+    border-radius: 14px; padding: 12px 14px; text-align: left; }
   .food-warnings:empty { display: none; }
-  .food-warnings .warn-title { font-weight: bold; color: #C0392B; margin-bottom: 6px; font-size: 1.02rem; }
-  .food-warnings .warn-row { font-size: 0.98rem; line-height: 1.5; margin-top: 4px; color: #6E3B0E; }
-  .food-warnings .warn-row b { color: #C0392B; }
+  .food-warnings .warn-title { font-weight: bold; color: #FCA5A5; margin-bottom: 6px; font-size: 1.02rem; }
+  .food-warnings .warn-row { font-size: 0.98rem; line-height: 1.5; margin-top: 4px; color: #E9C48F; }
+  .food-warnings .warn-row b { color: #F87171; }
 
   /* 식사 구분 칩 */
   .mealchips { display: flex; gap: 8px; }
   .mchip { padding: 10px 14px; border-radius: 12px; font-size: 1rem; font-weight: bold;
-    border: 2px solid #C8D8CC; background: #fff; color: #666; cursor: pointer; font-family: inherit; }
-  .mchip.on { border-color: var(--accent); background: var(--accent); color: #fff; }
+    border: 1.5px solid var(--border); background: var(--card2); color: var(--muted);
+    cursor: pointer; font-family: inherit; }
+  .mchip.on { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); }
 
   /* 식단표 화면 */
   .diary-nav { display: flex; align-items: center; justify-content: space-between;
     width: 100%; max-width: 440px; }
-  .diary-nav button { border: none; background: #E8F1EA; color: var(--accent);
+  .diary-nav button { border: 1px solid var(--border); background: var(--card2); color: var(--accent);
     font-size: 1.4rem; font-weight: bold; border-radius: 12px; padding: 8px 18px;
     cursor: pointer; font-family: inherit; }
   .diary-nav button:disabled { opacity: 0.3; }
-  #diary-date { font-size: 1.15rem; font-weight: bold; }
+  #diary-date { font-size: 1.15rem; font-weight: bold; color: var(--fg); }
   .weekstrip { display: flex; gap: 6px; justify-content: center; width: 100%; max-width: 440px; }
-  .wday { flex: 1; padding: 8px 2px; border-radius: 10px; background: #fff;
-    font-size: 0.85rem; color: #777; border: 2px solid transparent; cursor: pointer; font-family: inherit; }
+  .wday { flex: 1; padding: 8px 2px; border-radius: 10px; background: var(--card2);
+    font-size: 0.85rem; color: var(--muted); border: 1.5px solid transparent;
+    cursor: pointer; font-family: inherit; }
   .wday .dot { display: block; font-size: 1.05rem; }
   .wday.sel { border-color: var(--accent); font-weight: bold; }
   /* 출석 도장 달력 */
   .stamp-streak { width: 100%; max-width: 440px; text-align: center; font-size: 1.1rem;
     font-weight: bold; color: var(--accent); }
-  .calendar { width: 100%; max-width: 440px; background: #fff; border-radius: 14px;
-    padding: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
-  .cal-title { text-align: center; font-weight: bold; font-size: 1.05rem; margin-bottom: 6px; }
+  .calendar { width: 100%; max-width: 440px; background: var(--card);
+    border: 1px solid var(--border); border-radius: 16px; padding: 10px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.35); }
+  .cal-title { text-align: center; font-weight: bold; font-size: 1.05rem; margin-bottom: 6px;
+    color: var(--fg); }
   .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
-  .cal-dow { text-align: center; font-size: 0.8rem; color: #999; padding: 2px 0; }
+  .cal-dow { text-align: center; font-size: 0.8rem; color: var(--muted); padding: 2px 0; }
   .cal-cell { aspect-ratio: 1; display: flex; flex-direction: column; align-items: center;
-    justify-content: center; border-radius: 8px; font-size: 0.8rem; color: #bbb; }
-  .cal-cell.has { background: #E8F1EA; color: #333; font-weight: bold; }
+    justify-content: center; border-radius: 8px; font-size: 0.8rem; color: #4A5568;
+    background: transparent; border: none; font-family: inherit; }
+  .cal-cell.has { background: #10281F; color: var(--fg); font-weight: bold; cursor: pointer; }
   .cal-cell .stamp { font-size: 1.1rem; line-height: 1; }
   .cal-cell.today { outline: 2px solid var(--accent); }
 
   /* 하루 총 칼로리 카드 */
-  .kcal-card { width: 100%; max-width: 440px; background: #fff; border-radius: 12px;
-    padding: 12px 14px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
+  .kcal-card { width: 100%; max-width: 440px; background: var(--card);
+    border: 1px solid var(--border); border-radius: 16px; padding: 12px 14px; }
   .kcal-card:empty { display: none; }
   .kcal-head { display: flex; justify-content: space-between; align-items: baseline;
-    font-weight: bold; font-size: 1.1rem; }
+    font-weight: bold; font-size: 1.1rem; color: var(--fg); }
   .kcal-head .big { font-size: 1.5rem; color: var(--accent); }
-  .kcal-head .big.over { color: var(--red); }
-  .kcal-bar { height: 16px; background: #EEF3EF; border-radius: 8px; overflow: hidden; margin-top: 8px; }
+  .kcal-head .big.over { color: #F87171; }
+  .kcal-bar { height: 16px; background: var(--card2); border-radius: 8px; overflow: hidden;
+    margin-top: 8px; }
   .kcal-fill { height: 100%; background: var(--accent); border-radius: 8px; transition: width .3s; }
   .kcal-fill.over { background: var(--red); }
 
   /* 하루 권장 밥공기 안내 */
-  .bowls-guide { width: 100%; max-width: 440px; background: #FFF6E5; border-radius: 12px;
-    padding: 12px 14px; font-size: 1.05rem; font-weight: bold; color: #7A5A00; text-align: center; }
-
+  .bowls-guide { width: 100%; max-width: 440px; background: #241A07; border: 1px solid #3B2A0A;
+    border-radius: 14px; padding: 12px 14px; font-size: 1.05rem; font-weight: bold;
+    color: #FBBF24; text-align: center; }
 
   /* 위험 조언 박스 (합병증·위험 음식·운동) */
   #diary-risk:empty { display: none; }
-  .risk-box { width: 100%; max-width: 440px; background: #FDECEA; border: 2px solid var(--red);
-    border-radius: 14px; padding: 14px 16px; text-align: left; }
-  .risk-box h3 { color: var(--red); font-size: 1.15rem; margin-bottom: 6px; }
-  .risk-box .risk-why { color: #7A1C12; font-size: 1rem; line-height: 1.5; margin-bottom: 8px; }
-  .risk-box .sec-label { font-weight: bold; font-size: 0.98rem; margin: 8px 0 4px; }
+  .risk-box { width: 100%; max-width: 440px; background: #250F12; border: 1px solid #7F1D1D;
+    border-radius: 16px; padding: 14px 16px; text-align: left; }
+  .risk-box h3 { color: #F87171; font-size: 1.15rem; margin-bottom: 6px; }
+  .risk-box .risk-why { color: #FCA5A5; font-size: 1rem; line-height: 1.5; margin-bottom: 8px; }
+  .risk-box .sec-label { font-weight: bold; font-size: 0.98rem; margin: 8px 0 4px; color: var(--fg); }
   .risk-foods { display: flex; flex-wrap: wrap; gap: 6px; }
-  .risk-foods .food { background: var(--red); color: #fff; font-weight: bold;
+  .risk-foods .food { background: #DC2626; color: #fff; font-weight: bold;
     padding: 5px 10px; border-radius: 999px; font-size: 0.95rem; }
-  .risk-ex { background: #E8F1EA; border-radius: 10px; padding: 9px 12px; margin-top: 4px;
-    font-size: 0.98rem; color: #14532d; }
+  .risk-ex { background: #0E2318; border: 1px solid #1B4433; border-radius: 10px;
+    padding: 9px 12px; margin-top: 4px; font-size: 0.98rem; color: #6EE7B7; }
   .risk-ex b { color: var(--accent); }
 
   #diary-list { width: 100%; max-width: 440px; text-align: left; }
   .meal-group { font-size: 1.02rem; font-weight: bold; color: var(--accent); padding: 10px 4px 2px; }
   .meal-row { display: flex; justify-content: space-between; gap: 8px; align-items: center;
-    padding: 9px 8px; background: #fff; border-radius: 10px; margin-top: 5px; font-size: 1rem; }
-  .meal-row .t { color: #999; min-width: 44px; font-size: 0.9rem; }
+    padding: 9px 10px; background: var(--card2); border: 1px solid var(--border);
+    border-radius: 10px; margin-top: 5px; font-size: 1rem; color: var(--fg); }
+  .meal-row .t { color: var(--muted); min-width: 44px; font-size: 0.9rem; }
   .meal-row .n { flex: 1; font-weight: bold; }
-  .meal-row .v { color: #555; white-space: nowrap; font-size: 0.92rem; }
+  .meal-row .v { color: var(--muted); white-space: nowrap; font-size: 0.92rem; }
   .total-row { display: flex; justify-content: space-between; padding: 10px 8px; margin-top: 8px;
-    border-top: 3px solid var(--accent); font-weight: bold; font-size: 1rem; }
-  #diary-eval { width: 100%; max-width: 440px; padding: 14px 16px; border-radius: 14px;
+    border-top: 2px solid var(--accent); font-weight: bold; font-size: 1rem; color: var(--fg); }
+  #diary-eval { width: 100%; max-width: 440px; padding: 14px 16px; border-radius: 16px;
     color: #fff; text-align: left; line-height: 1.55; }
-  #diary-eval.good { background: var(--green); } #diary-eval.caution { background: var(--yellow); }
-  #diary-eval.risk { background: var(--red); }
+  #diary-eval.good { background: #14532D; } #diary-eval.caution { background: #92400E; }
+  #diary-eval.risk { background: #991B1B; }
   #diary-eval h2 { font-size: 1.35rem; margin-bottom: 4px; }
   #diary-eval ul { margin-left: 18px; font-size: 0.98rem; }
 
   /* 수동 입력 / 설정 */
   #manual-input {
     font-size: 2.3rem; width: 200px; text-align: center; padding: 12px;
-    border: 4px solid var(--accent); border-radius: 16px; font-family: inherit;
+    border: 2px solid var(--accent); border-radius: 16px; font-family: inherit;
+    background: var(--card2); color: var(--fg);
   }
   #apikey-input { font-size: 1.05rem; width: 100%; max-width: 440px; padding: 14px;
-    border: 3px solid var(--accent); border-radius: 12px; font-family: inherit; }
+    border: 2px solid var(--accent); border-radius: 12px; font-family: inherit;
+    background: var(--card2); color: var(--fg); }
+  input, textarea { background: var(--card2); color: var(--fg); }
+  input::placeholder, textarea::placeholder { color: #56637A; }
+  #symptom-input { background: var(--card2); color: var(--fg); }
   select {
     font-size: 1.1rem; padding: 9px 12px; border-radius: 12px;
-    border: 2px solid #C8D8CC; font-family: inherit; background: #fff;
+    border: 1.5px solid var(--border); font-family: inherit;
+    background: var(--card2); color: var(--fg);
   }
-  label { font-size: 1.02rem; font-weight: bold; }
-  .row { display: flex; gap: 10px; align-items: center; justify-content: center; }
-  .disclaimer { font-size: 0.9rem; color: #777; line-height: 1.5; max-width: 460px; }
-  .linkbtn { background: none; border: none; color: #888; font-size: 0.95rem;
+  select:disabled { opacity: 0.4; }
+  label { font-size: 1.02rem; font-weight: bold; color: var(--fg); }
+  .row { display: flex; gap: 10px; align-items: center; justify-content: center; color: var(--fg); }
+  .disclaimer { font-size: 0.9rem; color: var(--muted); line-height: 1.5; max-width: 460px; }
+  .linkbtn { background: none; border: none; color: var(--muted); font-size: 0.95rem;
     text-decoration: underline; cursor: pointer; font-family: inherit; }
 
   /* 건강 나무 — 초록불이면 자라고, 빨간불이 잦으면 시든다 */
-  .tree-card { text-align: center; padding: 16px; }
+  .tree-card { text-align: center; padding: 16px;
+    background: linear-gradient(180deg, #14211B 0%, var(--card) 100%); }
   .tree-fig { font-size: 4rem; line-height: 1.15; display: inline-block;
     transform-origin: 50% 100%; animation: tree-sway 3.2s ease-in-out infinite;
     transition: filter 0.6s; }
-  .tree-fig.wilted { filter: grayscale(0.75) brightness(0.92);
+  .tree-fig.wilted { filter: grayscale(0.75) brightness(0.85);
     animation: tree-droop 4s ease-in-out infinite; }
   .tree-fig.bloom { animation: tree-sway 3.2s ease-in-out infinite, tree-pop 0.6s ease-out; }
   .tree-msg { margin-top: 6px; font-size: 1.05rem; font-weight: bold; color: var(--accent); }
-  .tree-card .wilted ~ .tree-msg, .tree-msg.wilted { color: var(--red); }
+  .tree-card .wilted ~ .tree-msg, .tree-msg.wilted { color: #F87171; }
   @keyframes tree-sway { 0%, 100% { transform: rotate(-2.5deg); } 50% { transform: rotate(2.5deg); } }
   @keyframes tree-droop { 0%, 100% { transform: rotate(6deg) translateY(3px); } 50% { transform: rotate(9deg) translateY(5px); } }
   @keyframes tree-pop { 0% { scale: 0.6; } 70% { scale: 1.15; } 100% { scale: 1; } }
 
   /* 사용 모드 버튼 (부모/아이) */
-  .modebtn.on { background: var(--accent); color: #fff; }
+  .modebtn.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 
-  /* 정보 초기화 — 위험 동작이라 옅은 빨강 */
-  .dangerbtn { background: #FDECEA; color: var(--red); border: 2px solid #F5C6C0; }
+  /* 정보 초기화 — 위험 동작 */
+  .dangerbtn { background: #2A1518; color: #F87171; border: 1px solid #4C1D1F; box-shadow: none; }
 
   /* 증상 예시 칩 */
   .schip { padding: 10px 14px; border-radius: 999px; font-size: 1rem; font-weight: bold;
-    border: 2px solid #C8D8CC; background: #fff; color: #444; cursor: pointer; font-family: inherit; }
-  .schip:active { background: #E8F1EA; }
+    border: 1.5px solid var(--border); background: var(--card2); color: var(--fg);
+    cursor: pointer; font-family: inherit; }
+  .schip:active { background: #10281F; border-color: var(--accent); }
 
   /* 맞춤 식단 선택지 칩 (그룹당 하나 선택) */
   .pchip { padding: 10px 14px; border-radius: 999px; font-size: 1rem; font-weight: bold;
-    border: 2px solid #C8D8CC; background: #fff; color: #666; cursor: pointer; font-family: inherit; }
-  .pchip.on { border-color: var(--accent); background: var(--accent); color: #fff; }
+    border: 1.5px solid var(--border); background: var(--card2); color: var(--muted);
+    cursor: pointer; font-family: inherit; }
+  .pchip.on { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); }
 
   /* 바코드 스캔 박스 */
   #scan-box { display: none; width: 78%; max-width: 340px; height: 130px;
@@ -248,19 +274,20 @@
     flex-shrink: 0; margin: 6px auto; }
   .wheel-pointer { position: absolute; top: -4px; left: 50%; transform: translateX(-50%); z-index: 3;
     width: 0; height: 0; border-left: 14px solid transparent; border-right: 14px solid transparent;
-    border-top: 26px solid #111; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.3)); }
+    border-top: 26px solid var(--fg); filter: drop-shadow(0 1px 2px rgba(0,0,0,0.5)); }
   .wheel { width: 100%; height: 100%; border-radius: 50%; position: relative; aspect-ratio: 1 / 1;
-    border: 6px solid #fff; box-shadow: 0 2px 12px rgba(0,0,0,0.25);
+    border: 6px solid var(--card2); box-shadow: 0 4px 18px rgba(0,0,0,0.5);
     transition: transform 4.5s cubic-bezier(0.15, 0.85, 0.2, 1); }
   .wheel .wlabel { position: absolute; top: 50%; left: 50%; color: #fff; font-weight: 900;
-    font-size: 1.25rem; text-shadow: 0 1px 2px rgba(0,0,0,0.4); }
-  .wheel-result { min-height: 1.6em; font-size: 1.4rem; font-weight: 900; }
-  .wheel-result .a { color: #B8860B; }
+    font-size: 1.25rem; text-shadow: 0 1px 2px rgba(0,0,0,0.5); }
+  .wheel-result { min-height: 1.6em; font-size: 1.4rem; font-weight: 900; color: var(--fg); }
+  .wheel-result .a { color: #FBBF24; }
 
   /* 자막 바 — 음성 내용을 항상 글로도 표시 */
   #caption {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
-    background: rgba(17, 17, 17, 0.92); color: #fff;
+    background: rgba(8, 11, 16, 0.96); color: #EDF2F7;
+    border-top: 1px solid var(--border);
     padding: 12px 54px 12px 18px; font-size: 1.12rem; line-height: 1.45; text-align: center;
     min-height: 24px; max-height: 32vh; overflow-y: auto; display: none;
     transition: transform 0.28s ease;
@@ -269,15 +296,15 @@
   #caption.collapsed { transform: translateY(100%); }   /* 아래로 접힘 */
   #caption-toggle {
     position: absolute; top: 8px; right: 10px;
-    background: rgba(255,255,255,0.18); border: none; color: #fff;
+    background: rgba(255,255,255,0.12); border: none; color: #fff;
     font-size: 1rem; line-height: 1; border-radius: 8px; padding: 6px 12px;
     cursor: pointer; font-family: inherit;
   }
   #caption-show {
     position: fixed; right: 14px; bottom: 14px; z-index: 51; display: none;
-    width: 52px; height: 52px; border-radius: 50%; border: none;
-    background: rgba(17,17,17,0.9); color: #fff; font-size: 1.5rem; cursor: pointer;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+    width: 52px; height: 52px; border-radius: 50%; border: 1px solid var(--border);
+    background: rgba(12,16,22,0.95); color: #fff; font-size: 1.5rem; cursor: pointer;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.5);
   }
   #caption-show.show { display: block; }
 </style>
