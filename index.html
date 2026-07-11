@@ -3,23 +3,23 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="theme-color" content="#0B0F14">
+<meta name="theme-color" content="#0A0A0C">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
 <title>푸드케어 렌즈</title>
 <style>
   :root {
-    --bg: #0B0F14; --card: #151B23; --card2: #1C242E; --border: #273140;
-    --fg: #EDF2F7; --muted: #8B99AB;
-    --accent: #3DDC97; --accent-ink: #062018;
+    --bg: #0A0A0C; --card: #141417; --card2: #1C1C21; --border: #27272E;
+    --fg: #F5F6F8; --muted: #8E8E98;
+    --accent: #F5F6F8; --accent-ink: #0A0A0C;
     --green: #22C55E; --yellow: #CA8A04; --red: #E5484D;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { height: 100%; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "맑은 고딕", "Malgun Gothic", sans-serif;
-    background: radial-gradient(1100px 480px at 50% -12%, #12241C 0%, var(--bg) 55%) fixed, var(--bg);
+    background: radial-gradient(900px 380px at 50% -12%, #17171B 0%, var(--bg) 60%) fixed, var(--bg);
     color: var(--fg);
     display: flex; flex-direction: column;
   }
@@ -40,13 +40,13 @@
     font-size: 1.35rem; font-weight: 800; font-family: inherit;
     border: none; border-radius: 16px; cursor: pointer;
     background: var(--accent); color: var(--accent-ink);
-    box-shadow: 0 4px 16px rgba(61,220,151,0.22);
+    box-shadow: 0 3px 12px rgba(0,0,0,0.45);
     transition: transform .06s ease, filter .15s ease;
   }
   .bigbtn.secondary { background: var(--card2); color: var(--fg);
     border: 1px solid var(--border); box-shadow: none; }
   .bigbtn.small { padding: 13px; font-size: 1.05rem; }
-  .bigbtn:active { transform: scale(0.98); filter: brightness(1.08); }
+  .bigbtn:active { transform: scale(0.98); filter: brightness(0.92); }
   .btnrow { display: flex; gap: 10px; width: 100%; max-width: 440px; }
   .btnrow .bigbtn { flex: 1; }
 
@@ -99,8 +99,8 @@
   .vchip.red { background: #DC2626; } .vchip.unknown { background: #4B5563; }
   #food-portion { font-size: 1.25rem; color: var(--fg); }
   #food-portion .bowls { font-size: 1.7rem; letter-spacing: 2px; }
-  #food-advice { font-size: 1.15rem; font-weight: bold; color: #7CE7B9;
-    background: #10281F; border: 1px solid #1B4433;
+  #food-advice { font-size: 1.15rem; font-weight: bold; color: var(--fg);
+    background: var(--card2); border: 1px solid var(--border);
     padding: 10px 16px; border-radius: 12px; max-width: 440px; }
   table.nutri { border-collapse: collapse; width: 100%; max-width: 440px; font-size: 1.05rem;
     background: var(--card); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
@@ -151,7 +151,7 @@
   .cal-cell { aspect-ratio: 1; display: flex; flex-direction: column; align-items: center;
     justify-content: center; border-radius: 8px; font-size: 0.8rem; color: #4A5568;
     background: transparent; border: none; font-family: inherit; }
-  .cal-cell.has { background: #10281F; color: var(--fg); font-weight: bold; cursor: pointer; }
+  .cal-cell.has { background: #222228; color: var(--fg); font-weight: bold; cursor: pointer; }
   .cal-cell .stamp { font-size: 1.1rem; line-height: 1; }
   .cal-cell.today { outline: 2px solid var(--accent); }
 
@@ -183,9 +183,9 @@
   .risk-foods { display: flex; flex-wrap: wrap; gap: 6px; }
   .risk-foods .food { background: #DC2626; color: #fff; font-weight: bold;
     padding: 5px 10px; border-radius: 999px; font-size: 0.95rem; }
-  .risk-ex { background: #0E2318; border: 1px solid #1B4433; border-radius: 10px;
-    padding: 9px 12px; margin-top: 4px; font-size: 0.98rem; color: #6EE7B7; }
-  .risk-ex b { color: var(--accent); }
+  .risk-ex { background: var(--card2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 9px 12px; margin-top: 4px; font-size: 0.98rem; color: #86EFAC; }
+  .risk-ex b { color: var(--fg); }
 
   #diary-list { width: 100%; max-width: 440px; text-align: left; }
   .meal-group { font-size: 1.02rem; font-weight: bold; color: var(--accent); padding: 10px 4px 2px; }
@@ -230,7 +230,7 @@
 
   /* 건강 나무 — 초록불이면 자라고, 빨간불이 잦으면 시든다 */
   .tree-card { text-align: center; padding: 16px;
-    background: linear-gradient(180deg, #14211B 0%, var(--card) 100%); }
+    background: linear-gradient(180deg, #1A1A1F 0%, var(--card) 100%); }
   .tree-fig { font-size: 4rem; line-height: 1.15; display: inline-block;
     transform-origin: 50% 100%; animation: tree-sway 3.2s ease-in-out infinite;
     transition: filter 0.6s; }
@@ -253,7 +253,7 @@
   .schip { padding: 10px 14px; border-radius: 999px; font-size: 1rem; font-weight: bold;
     border: 1.5px solid var(--border); background: var(--card2); color: var(--fg);
     cursor: pointer; font-family: inherit; }
-  .schip:active { background: #10281F; border-color: var(--accent); }
+  .schip:active { background: #222228; border-color: var(--accent); }
 
   /* 맞춤 식단 선택지 칩 (그룹당 하나 선택) */
   .pchip { padding: 10px 14px; border-radius: 999px; font-size: 1rem; font-weight: bold;
