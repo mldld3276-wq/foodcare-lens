@@ -102,6 +102,45 @@
   function buildLabelRequest(base64Jpeg, diseases) { return visionRequest(base64Jpeg, labelPrompt(diseases)); }
   function buildFoodRequest(base64Jpeg, diseases) { return visionRequest(base64Jpeg, foodPrompt(diseases)); }
 
+  /** 바코드 숫자 판독 프롬프트 (순수 함수) — 자동 인식이 안 되는 기기의 AI 폴백 */
+  function barcodePrompt() {
+    return "사진 속 바코드의 숫자(보통 막대 아래 인쇄된 8~13자리)를 읽어 주세요. " +
+      "숫자만 정확히 옮기고, 읽을 수 없으면 빈 문자열로 하세요." +
+      "\n\n반드시 아래 JSON 형식 하나만 출력하세요. 설명·코드펜스 없이 JSON만:\n" +
+      "{ \"barcode\": \"숫자만 (읽을 수 없으면 \\\"\\\")\" }";
+  }
+  function buildBarcodeRequest(base64Jpeg) { return visionRequest(base64Jpeg, barcodePrompt()); }
+
+  /** 바코드 응답 → 숫자 문자열 (순수 함수). 8~14자리 아니면 "" */
+  function parseBarcodeReply(text) {
+    var obj = extractJson(text);
+    if (!obj || typeof obj.barcode !== "string") return "";
+    var digits = obj.barcode.replace(/\D/g, "");
+    return (digits.length >= 8 && digits.length <= 14) ? digits : "";
+  }
+
+  /** 물건 알아보기 프롬프트 (순수 함수) — 사진 속 물건이 무엇인지 어르신에게 설명 */
+  function objectPrompt() {
+    return "사진 속 물건이 무엇인지 알아보고, 어르신께 말하듯 쉽게 설명해 주세요. " +
+      "무엇에 쓰는 물건인지, 주의할 점이 있다면 함께요. 알아볼 수 없으면 name을 빈 문자열로 하세요." +
+      "\n\n반드시 아래 JSON 형식 하나만 출력하세요. 설명·코드펜스 없이 JSON만:\n" +
+      "{\n" +
+      "  \"name\": \"물건 이름(한국어, 짧게. 모르면 \\\"\\\")\",\n" +
+      "  \"description\": \"쉬운 설명(한국어, 2~3문장, 존댓말)\"\n" +
+      "}";
+  }
+  function buildObjectRequest(base64Jpeg) { return visionRequest(base64Jpeg, objectPrompt()); }
+
+  /** 물건 응답 → {name, description} (순수 함수). 실패 시 null */
+  function parseObjectReply(text) {
+    var obj = extractJson(text);
+    if (!obj || typeof obj.name !== "string") return null;
+    return {
+      name: obj.name.trim(),
+      description: typeof obj.description === "string" ? obj.description.trim() : ""
+    };
+  }
+
   /** Gemini 요청 본문 (순수 함수). thinkingBudget 0으로 추론 끄고 JSON만 받는다 */
   function buildGeminiRequest(base64Jpeg, prompt) {
     return {
@@ -275,10 +314,28 @@
     });
   }
 
+  /** 브라우저 전용: 바코드 사진(base64 JPEG) → 바코드 숫자 ("" = 판독 실패) */
+  function analyzeBarcodeImage(base64Jpeg, apiKey) {
+    return callVision(base64Jpeg, barcodePrompt(), apiKey).then(function (text) {
+      return parseBarcodeReply(text);
+    });
+  }
+
+  /** 브라우저 전용: 물건 사진(base64 JPEG) → {name, description} (null = 판독 실패) */
+  function analyzeObjectImage(base64Jpeg, apiKey) {
+    return callVision(base64Jpeg, objectPrompt(), apiKey).then(function (text) {
+      return parseObjectReply(text);
+    });
+  }
+
   return { buildFoodRequest: buildFoodRequest, parseAiReply: parseAiReply,
     buildLabelRequest: buildLabelRequest, parseLabelReply: parseLabelReply,
+    buildBarcodeRequest: buildBarcodeRequest, parseBarcodeReply: parseBarcodeReply,
+    buildObjectRequest: buildObjectRequest, parseObjectReply: parseObjectReply,
+    analyzeObjectImage: analyzeObjectImage,
     buildGeminiRequest: buildGeminiRequest, parseGeminiText: parseGeminiText,
     detectProvider: detectProvider, foodPrompt: foodPrompt, labelPrompt: labelPrompt,
     analyzeFoodImage: analyzeFoodImage, analyzeLabelImage: analyzeLabelImage,
+    analyzeBarcodeImage: analyzeBarcodeImage,
     MODEL: MODEL, GEMINI_MODELS: GEMINI_MODELS };
 });

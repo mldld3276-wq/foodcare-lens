@@ -4,7 +4,7 @@
   "use strict";
 
   // 앱 버전 — 배포할 때마다 올린다. 폰에서 최신 버전이 로드됐는지 확인용.
-  var APP_VERSION = "2.4";
+  var APP_VERSION = "2.5";
 
   var $ = function (id) { return document.getElementById(id); };
   var screens = ["home", "camera", "progress", "manual", "result", "food", "diary",
@@ -115,6 +115,8 @@
       $("screen-" + s).classList.toggle("active", s === name);
     });
     if (name !== "camera") stopCamera();
+    // 홈으로 올 때마다 건강 나무·뽑기권을 최신으로
+    if (name === "home" && typeof updateHome === "function") updateHome();
   }
 
   function firstRunDisclaimer() {
@@ -134,34 +136,110 @@
   }
 
   // ── 카메라 ───────────────────────────────────────────────────
-  function startCamera(mode) {
+  var scanTimer = null;   // 바코드 자동 인식 루프
+  var camGen = 0;         // 카메라 세대 — 취소/전환 후 늦게 도착한 콜백 무시
+  var scanBroken = false; // BarcodeDetector가 있어도 실제로는 안 되는 기기 감지
+
+  /**
+   * 카메라 시작. introMsg가 있으면 안내 앞에 붙여 한 번에 발화한다
+   * (speak가 이전 발화를 끊으므로, 나눠 부르면 앞 설명이 사라진다).
+   */
+  function startCamera(mode, introMsg) {
     captureMode = mode;
+    var gen = ++camGen;
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       if (mode === "label") { speak("이 기기에서는 카메라를 쓸 수 없어요. 당류 숫자를 직접 입력해 주세요."); show("manual"); }
       else { speak("이 기기에서는 카메라를 쓸 수 없어요."); show("home"); }
       return;
     }
     show("camera");
+    $("scan-box").classList.toggle("show", mode === "barcode");
+    var pre = introMsg ? introMsg + " " : "";
     if (mode === "food") {
       $("camera-guide").textContent = "드실 음식을 화면에 비춰 주세요";
-      speak("드실 음식을 화면에 비춰 주세요. 화면 아무 곳이나 누르면 찍힙니다.");
+      $("camera-hint").textContent = "화면 아무 곳이나 누르면 찍힙니다";
+      speak(pre + "드실 음식을 화면에 비춰 주세요. 화면 아무 곳이나 누르면 찍힙니다.");
+    } else if (mode === "object") {
+      $("camera-guide").textContent = "궁금한 물건을 화면에 비춰 주세요";
+      $("camera-hint").textContent = "화면 아무 곳이나 누르면 찍힙니다";
+      speak(pre + "궁금한 물건을 화면에 비춰 주세요. 화면 아무 곳이나 누르면 찍힙니다.");
+    } else if (mode === "barcode") {
+      $("camera-guide").textContent = "바코드를 네모 칸에 맞춰 주세요";
+      $("camera-hint").textContent = (FoodBarcode.scanSupported() && !scanBroken)
+        ? "가까이 대면 자동으로 읽어요"
+        : "바코드가 잘 보이게 화면을 누르면 AI가 읽어요";
+      speak(pre + "바코드를 네모 칸에 맞춰 주세요.");
     } else {
       $("camera-guide").textContent = "영양성분표를 화면에 비춰 주세요";
-      speak("영양성분표를 화면에 비춰 주세요. 화면 아무 곳이나 누르면 찍힙니다.");
+      $("camera-hint").textContent = "화면 아무 곳이나 누르면 찍힙니다";
+      speak(pre + "영양성분표를 화면에 비춰 주세요. 화면 아무 곳이나 누르면 찍힙니다.");
     }
     navigator.mediaDevices.getUserMedia({
       video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } },
       audio: false
     }).then(function (s) {
+      if (gen !== camGen) {
+        // 대기 중 사용자가 취소/이동 — 뒤늦게 온 스트림은 즉시 끈다
+        s.getTracks().forEach(function (t) { t.stop(); });
+        return;
+      }
       stream = s;
       $("video").srcObject = s;
+      if (mode === "barcode" && FoodBarcode.scanSupported() && !scanBroken) beginScanLoop(gen);
     }).catch(function () {
+      if (gen !== camGen) return;
       speak("카메라를 열 수 없어요.");
       show(mode === "label" ? "manual" : "home");
     });
   }
 
+  function stopScanLoop() {
+    if (scanTimer) { clearInterval(scanTimer); scanTimer = null; }
+  }
+
+  function beginScanLoop(gen) {
+    stopScanLoop();
+    var detector;
+    try {
+      detector = new BarcodeDetector({
+        formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128"]
+      });
+    } catch (e) {
+      // BarcodeDetector가 있어도 생성이 안 되는 기기 — 수동 촬영(AI 판독)으로 전환
+      scanBroken = true;
+      $("camera-hint").textContent = "바코드가 잘 보이게 화면을 누르면 AI가 읽어요";
+      return;
+    }
+    var failures = 0;
+    scanTimer = setInterval(function () {
+      if (gen !== camGen) { stopScanLoop(); return; }
+      var video = $("video");
+      if (!video.videoWidth) return;
+      detector.detect(video).then(function (codes) {
+        if (gen !== camGen) return; // 취소 직전에 발사된 감지 결과는 무시
+        failures = 0;
+        if (codes && codes.length && codes[0].rawValue) {
+          stopScanLoop();
+          onBarcode(codes[0].rawValue);
+        }
+      }).catch(function () {
+        // 연속 실패가 계속되면 이 기기의 감지기가 고장난 것 — 수동 촬영으로 전환
+        failures++;
+        if (failures >= 8) {
+          scanBroken = true;
+          stopScanLoop();
+          if (gen === camGen) {
+            $("camera-hint").textContent = "바코드가 잘 보이게 화면을 누르면 AI가 읽어요";
+            speak("자동 인식이 안 되는 기기예요. 바코드가 잘 보이게 화면을 눌러 주세요.");
+          }
+        }
+      });
+    }, 350);
+  }
+
   function stopCamera() {
+    camGen++; // 진행 중이던 getUserMedia/detect 콜백 무효화
+    stopScanLoop();
     if (stream) {
       stream.getTracks().forEach(function (t) { t.stop(); });
       stream = null;
@@ -172,6 +250,11 @@
   function captureAndRecognize() {
     var video = $("video");
     if (!video.videoWidth) return;
+    if (captureMode === "barcode" && FoodBarcode.scanSupported() && !scanBroken) {
+      // 자동 인식 중 — 실수 터치로 사진이 찍히지 않게
+      speak("자동으로 읽고 있어요. 바코드를 네모 칸에 맞춰 주세요.");
+      return;
+    }
     var canvas = $("capture-canvas");
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
@@ -180,6 +263,8 @@
     show("progress");
     var my = ++jobId;
     if (captureMode === "food") runFoodAnalysis(canvas, my);
+    else if (captureMode === "barcode") runBarcodePhoto(canvas, my);
+    else if (captureMode === "object") runObjectAnalysis(canvas, my);
     else runLabelOcr(canvas, my);
   }
 
@@ -277,6 +362,111 @@
     }).catch(function () { if (my === jobId) showFail("label"); });
   }
 
+  // ── 바코드 경로: 스캔 → 상품 DB 조회 → 신호등 판정 ────────────
+  /** 상품 정보 → 음식 결과 형태. 없는 값은 undefined(판정 불가) 유지.
+      per="100g"(제공량 환산 불가)이면 한 끼 신호등 판정을 하지 않는다 —
+      100g 수치를 한 끼 기준에 대입하면 콜라는 과소, 장류는 과대 오판이 나기 때문. */
+  function makeFoodFromBarcode(p) {
+    return {
+      food_name: p.food_name,
+      confidence: "high",
+      kcal: p.kcal, carbs_g: p.carbs_g, sugar_g: p.sugar_g,
+      sodium_mg: p.sodium_mg, protein_g: p.protein_g, fat_g: p.fat_g,
+      caffeine_mg: p.caffeine_mg,
+      purine_level: "unknown", // 상품 DB에는 퓨린 정보가 없다 — 정직하게 판정 불가
+      health_note: (p.brands ? "(" + p.brands + ") " : "") +
+        (p.per === "converted" ? "1회 제공량으로 환산한 수치예요." : ""),
+      portion_advice: "",
+      _barcode: true,
+      _per: p.per,
+      _noJudge: p.per === "100g" // 양 기준을 몰라 신호등 판정 보류
+    };
+  }
+
+  function onBarcode(code) {
+    stopCamera();
+    show("progress");
+    $("ocr-progress").textContent = "상품 정보를 찾고 있어요…";
+    speak("바코드를 읽었어요. 상품 정보를 찾고 있어요.");
+    var my = ++jobId;
+    FoodBarcode.lookup(code).then(function (p) {
+      if (my !== jobId) return;
+      lastFood = makeFoodFromBarcode(p);
+      showFoodResult(lastFood);
+    }).catch(function (err) {
+      if (my !== jobId) return;
+      if (err && err.message === "NOT_FOUND") {
+        // DB에 없는 상품 → 성분표 촬영으로 자연스럽게 유도 (하이브리드)
+        startCamera("label", "아직 등록되지 않은 상품이에요. 대신 성분표를 찍어 주세요.");
+      } else {
+        showFail("label", "상품 정보를 불러오지 못했어요 (원인: " + (err && err.message) + ").\n성분표 촬영으로 확인해 주세요.");
+      }
+    });
+  }
+
+  /** 자동 인식이 안 되는 기기: 찍은 사진에서 AI가 바코드 숫자를 읽는다 */
+  function runBarcodePhoto(canvas, my) {
+    if (!apiKey()) {
+      startCamera("label", "이 기기는 바코드 인식이 안 돼요. 대신 성분표를 찍어 주세요.");
+      return;
+    }
+    speak("찍혔습니다. AI가 바코드를 읽고 있어요.");
+    $("ocr-progress").textContent = "AI가 바코드를 읽고 있어요…";
+    var scaled = downscale(canvas, 1600);
+    var base64 = scaled.toDataURL("image/jpeg", 0.9).split(",")[1];
+    FoodAI.analyzeBarcodeImage(base64, apiKey()).then(function (code) {
+      if (my !== jobId) return;
+      if (!code) {
+        // 바코드 모드 유지 — '다시 찍기'가 바코드 촬영으로 이어지게
+        showFail("barcode", "바코드를 읽지 못했어요.\n바코드가 크고 선명하게 나오게 다시 찍어 주세요.");
+        return;
+      }
+      onBarcode(code);
+    }).catch(function (err) {
+      if (my !== jobId) return;
+      var m = "바코드를 읽지 못했어요 (원인: " + (err && err.message) + ").\n성분표 촬영으로 확인해 주세요.";
+      if (err && err.detail) m += "\n[상세: " + err.detail + "]";
+      showFail("label", m);
+    });
+  }
+
+  // ── 물건 알아보기: 찍은 물건이 무엇인지 AI가 설명 ─────────────
+  function runObjectAnalysis(canvas, my) {
+    speak("찍혔습니다. AI가 무엇인지 알아보고 있어요.");
+    $("ocr-progress").textContent = "AI가 물건을 알아보고 있어요…";
+    var scaled = downscale(canvas, 1200);
+    var base64 = scaled.toDataURL("image/jpeg", 0.85).split(",")[1];
+    FoodAI.analyzeObjectImage(base64, apiKey()).then(function (obj) {
+      if (my !== jobId) return;
+      if (!obj || !obj.name) {
+        showFail("object", "무엇인지 알아보지 못했어요.\n물건이 잘 보이게 다시 찍어 주세요.");
+        return;
+      }
+      renderObjectResult(obj);
+    }).catch(function (err) {
+      if (my !== jobId) return;
+      var msg = {
+        AUTH: "API 키가 올바르지 않아요. AI 설정에서 키를 확인해 주세요.",
+        RATE: "요청이 너무 많아요. 잠시 후 다시 시도해 주세요.",
+        OVERLOADED: "AI 서버가 붐벼요. 잠시 후 다시 시도해 주세요.",
+        TIMEOUT: "응답이 너무 오래 걸려 중단했어요. 다시 시도해 주세요."
+      }[err.message] || "알아보지 못했어요 (원인: " + err.message + "). 다시 시도해 주세요.";
+      if (err.detail) msg += "\n[상세: " + err.detail + "]";
+      showFail("object", msg);
+    });
+  }
+
+  function renderObjectResult(obj) {
+    var screen = $("screen-result");
+    screen.classList.remove("green", "yellow", "red");
+    screen.classList.add("neutral");
+    $("result-emoji").textContent = "🔍";
+    $("result-label").textContent = obj.name;
+    $("result-detail").textContent = obj.description || "";
+    show("result");
+    speak(withRo(obj.name) + " 보여요. " + (obj.description || "") + " 추정이므로 참고만 하세요.");
+  }
+
   // ── 음식 AI 분석 경로 ────────────────────────────────────────
   function runFoodAnalysis(canvas, my) {
     speak("찍혔습니다. AI가 음식을 알아보고 있어요. 잠시만 기다려 주세요.");
@@ -343,14 +533,25 @@
     var emoji = { green: "🟢", yellow: "🟡", red: "🔴", unknown: "⚪" };
 
     $("food-name").textContent = food.food_name;
-    $("food-confidence").textContent = (food._label ? "AI 성분표 판독 · 1회 제공량 기준 · 확신도 "
-      : "AI 추정 · 확신도 ") + ({ high: "높음", medium: "보통", low: "낮음" }[food.confidence]);
+    $("food-confidence").textContent = food._barcode
+      ? "바코드 상품 정보 · " + (food._per === "100g" ? "100g" : "1회 제공량") + " 기준"
+      : (food._label ? "AI 성분표 판독 · 1회 제공량 기준 · 확신도 " : "AI 추정 · 확신도 ") +
+        ({ high: "높음", medium: "보통", low: "낮음" }[food.confidence]);
 
-    // 질환별 신호등 칩
-    $("food-verdicts").innerHTML = meal.results.map(function (r) {
-      return "<span class='vchip " + r.color + "'>" + emoji[r.color] + " " +
-        r.name + " " + r.label + "<small style='font-weight:normal;'> · " + r.detail + "</small></span>";
-    }).join("");
+    // 질환별 신호등 칩 — 양 기준을 모르는 100g 상품은 오판정 대신 판정 보류
+    if (food._noJudge) {
+      $("food-verdicts").innerHTML =
+        "<span class='vchip unknown'>⚪ 판정 보류<small style='font-weight:normal;'> · 100g 기준이라 드시는 양에 따라 달라요</small></span>";
+    } else {
+      $("food-verdicts").innerHTML = meal.results.map(function (r) {
+        return "<span class='vchip " + r.color + "'>" + emoji[r.color] + " " +
+          r.name + " " + r.label + "<small style='font-weight:normal;'> · " + r.detail + "</small></span>";
+      }).join("");
+    }
+
+    // 판정 보류 상품은 식단표 기록도 막는다 (100g 수치가 하루 합산을 왜곡)
+    $("btn-food-save").style.display = food._noJudge ? "none" : "";
+    $("meal-card").style.display = food._noJudge ? "none" : "";
 
     // 분량: 밥공기 환산 + AI 조언
     var bowls = FoodDiary.kcalToBowls(food.kcal);
@@ -399,6 +600,13 @@
     selectMealChip(FoodDiary.guessMealType(new Date().getHours()));
     show("food");
 
+    // 판정 보류(100g 기준): 판정·기록 없이 정보만 알려주고 성분표 촬영을 권한다
+    if (food._noJudge) {
+      speak(food.food_name + " 상품이에요. 수치는 100그램 기준이라 드시는 양에 따라 달라져서 판정은 보류했어요. " +
+        "정확한 판정이 필요하면 성분표를 찍어 주세요.");
+      return;
+    }
+
     // 음성: 음식명 + 분량 + 질환별 판정 + 판정 불가 고지 + 조언
     var known = meal.results.filter(function (r) { return r.color !== "unknown"; });
     var unknowns = meal.results.filter(function (r) { return r.color === "unknown"; });
@@ -423,8 +631,9 @@
       ? " 이 봉지는 총 " + food._servings + "회 제공량이라, 전부 드시면 말씀드린 수치의 " +
         food._servings + "배예요."
       : "";
-    var speech = withRo(food.food_name) + " 보여요. " +
-      (food._label ? "1회 제공량 기준이에요. " : "") +
+    // 바코드는 추정이 아니라 상품 DB 조회 — 문구를 구분한다
+    var speech = (food._barcode ? food.food_name + " 상품이에요. " : withRo(food.food_name) + " 보여요. ") +
+      ((food._barcode || food._label) ? "1회 제공량 기준이에요. " : "") +
       (bowls.text ? bowls.text + "이에요. " : "") +
       verdictSpeech + "." + unknownSpeech + servingsSpeech + " " +
       (food.portion_advice ? food.portion_advice + ". " : "") +
@@ -526,9 +735,7 @@
     $("diary-bowls").textContent = entries.length ? "🍚 " + guide.text : "";
     $("diary-bowls").style.display = entries.length ? "" : "none";
 
-    // 자녀 모드: 켜져 있으면 '이 날 기록 지우기' 버튼을 숨겨 실수 삭제 방지
-    $("btn-child-mode").classList.toggle("on", !!profile.childMode);
-    $("btn-child-mode").textContent = profile.childMode ? "👶 자녀 모드 (켜짐)" : "👶 자녀 모드";
+    // 아이 모드: 켜져 있으면 '이 날 기록 지우기' 버튼을 숨겨 실수 삭제 방지
     $("btn-diary-clear").style.display = profile.childMode ? "none" : "";
 
     // 평가 배너
@@ -667,7 +874,7 @@
     var emoji = { green: "🟢", yellow: "🟡", red: "🔴" }[overall];
     var label = { green: "안심", yellow: "주의", red: "위험" }[overall];
     var screen = $("screen-result");
-    screen.classList.remove("green", "yellow", "red");
+    screen.classList.remove("green", "yellow", "red", "neutral");
     screen.classList.add(overall);
     $("result-emoji").textContent = emoji;
     $("result-label").textContent = label;
@@ -749,21 +956,22 @@
 
   // ── 실패 화면 ────────────────────────────────────────────────
   function showFail(mode, customMsg) {
-    captureMode = mode;
-    if (mode === "food") {
-      $("fail-title").textContent = "음식을 분석하지 못했어요";
-      $("fail-sub").innerHTML = esc(customMsg || "다시 찍어 주세요.").replace(/\n/g, "<br>");
-      $("btn-fail-manual").style.display = "none";
-      speak(customMsg || "음식을 분석하지 못했어요. 다시 찍어 주세요.");
-    } else {
-      $("fail-title").textContent = "성분표를 읽지 못했어요";
+    captureMode = mode; // '다시 찍기'가 같은 모드의 카메라로 이어진다
+    var titles = { food: "음식을 분석하지 못했어요", barcode: "바코드를 읽지 못했어요",
+      object: "무엇인지 알아보지 못했어요", label: "성분표를 읽지 못했어요" };
+    $("fail-title").textContent = titles[mode] || titles.label;
+    if (mode === "label") {
       $("fail-sub").innerHTML = (customMsg
         ? esc(customMsg).replace(/\n/g, "<br>")
         : "글씨가 잘 보이게 다시 찍거나,<br>당류 숫자를 직접 입력해 주세요.");
-      $("btn-fail-manual").style.display = "";
+      $("btn-fail-manual").style.display = ""; // 성분표만 수동 입력 경로 제공
       speak(customMsg
         ? customMsg
         : "성분표에서 당류를 찾지 못했어요. 다시 찍거나 직접 입력해 주세요.");
+    } else {
+      $("fail-sub").innerHTML = esc(customMsg || "다시 찍어 주세요.").replace(/\n/g, "<br>");
+      $("btn-fail-manual").style.display = "none";
+      speak(customMsg || (titles[mode] + ". 다시 찍어 주세요."));
     }
     show("fail");
   }
@@ -775,10 +983,30 @@
     showJudgement(v, null, null);
   }
 
-  // 홈 화면의 돌림판 버튼에 현재 뽑기권 수 표시
+  // 홈 화면: 돌림판 뽑기권 수 + 건강 나무 갱신
+  var lastTreeStage = -1;
+  function renderTree() {
+    var t = FoodTree.treeState(FoodDiary.loadAll(), FoodDiary.todayKey(), profile);
+    var fig = $("tree-fig");
+    fig.textContent = t.emoji;
+    fig.classList.toggle("wilted", t.wilted);
+    // 꽃이 새로 피는 순간의 팝 — 홈이 실제로 보일 때만 소비 (숨은 렌더가 순간을 삼키지 않게)
+    var homeVisible = $("screen-home").classList.contains("active");
+    fig.classList.remove("bloom");
+    if (homeVisible && t.flowers && lastTreeStage !== -1 && lastTreeStage < 4) {
+      void fig.offsetWidth; // reflow 강제 — 애니메이션 재시작 보장
+      fig.classList.add("bloom");
+    }
+    if (homeVisible) lastTreeStage = t.stage;
+    var msg = $("tree-msg");
+    msg.textContent = t.message;
+    msg.classList.toggle("wilted", t.wilted);
+  }
+
   function updateHome() {
     var t = FoodDraw.getTickets();
     $("btn-wheel").textContent = "🎡 행운 돌림판" + (t > 0 ? " (뽑기권 " + t + "장)" : "");
+    renderTree();
   }
 
   // ── AI 키 확인 후 음식 모드 진입 ─────────────────────────────
@@ -824,7 +1052,24 @@
   $("in-weight").addEventListener("input", onBodyInput);
 
   $("btn-scan").addEventListener("click", function () { startCamera("label"); });
+  $("btn-barcode").addEventListener("click", function () {
+    // 자동 인식(BarcodeDetector)도 AI 키도 없으면 바코드 경로가 불가능 — 성분표로 안내
+    if (!FoodBarcode.scanSupported() && !apiKey()) {
+      startCamera("label", "이 기기는 바코드 인식이 안 돼요. 대신 성분표를 찍어 주세요.");
+      return;
+    }
+    startCamera("barcode");
+  });
   $("btn-food").addEventListener("click", startFoodMode);
+  $("btn-object").addEventListener("click", function () {
+    if (!apiKey()) {
+      show("apikey");
+      speak("물건 알아보기에는 AI 설정이 필요해요. API 키를 입력해 주세요.");
+      $("apikey-input").focus();
+      return;
+    }
+    startCamera("object");
+  });
   $("btn-diary").addEventListener("click", function () {
     var evalr = renderDiary(FoodDiary.todayKey());
     speak(diarySpeech(evalr));
@@ -888,7 +1133,7 @@
     btn.addEventListener("click", function () { selectMealChip(btn.dataset.meal); });
   });
   $("btn-food-save").addEventListener("click", function () {
-    if (!lastFood) return;
+    if (!lastFood || lastFood._noJudge) return; // 100g 기준(양 미상)은 기록 불가
     var entry = Object.assign({}, lastFood, { mealType: selectedMeal });
     var ok = FoodDiary.saveMeal(entry);
     if (ok) {
@@ -917,34 +1162,55 @@
     speak(diarySpeech(evalr));
   });
   $("btn-diary-add").addEventListener("click", startFoodMode);
-  $("btn-child-mode").addEventListener("click", function () {
-    if (!profile.childMode) {
-      // 켜기 — 비밀번호 설정(처음이면 새로 정함)
-      var pw = window.prompt("자녀 모드를 켭니다.\n끌 때 쓸 비밀번호를 정해 주세요 (숫자·문자):", "");
-      if (pw == null) return;         // 취소
-      pw = String(pw).trim();
-      if (pw.length < 2) { speak("비밀번호는 2자 이상으로 정해 주세요."); return; }
-      profile.childMode = true;
-      profile.childPassword = pw;
-      saveProfile(profile);
-      renderDiary(diaryKey);
-      speak("자녀 모드를 켰어요. 이제 비밀번호 없이는 기록을 지울 수 없어요.");
-    } else {
-      // 끄기 — 비밀번호 확인
-      var input = window.prompt("자녀 모드를 끄려면 비밀번호를 입력하세요:", "");
-      if (input == null) return;      // 취소
-      if (String(input).trim() !== profile.childPassword) {
-        speak("비밀번호가 틀렸어요. 자녀 모드를 유지합니다.");
-        return;
-      }
+  // 사용 모드 (홈 화면): 부모 모드 = 전체 기능, 아이 모드 = 기록 삭제 잠금(비밀번호)
+  function renderModes() {
+    $("btn-mode-parent").classList.toggle("on", !profile.childMode);
+    $("btn-mode-child").classList.toggle("on", !!profile.childMode);
+  }
+  $("btn-mode-child").addEventListener("click", function () {
+    if (profile.childMode) { speak("이미 아이 모드예요."); return; }
+    // 켜기 — 부모가 비밀번호를 정한다 (끌 때 필요)
+    var pw = window.prompt("아이 모드를 켭니다.\n부모 모드로 돌아올 때 쓸 비밀번호를 정해 주세요:", "");
+    if (pw == null) return;         // 취소
+    pw = String(pw).trim();
+    if (pw.length < 2) { speak("비밀번호는 2자 이상으로 정해 주세요."); return; }
+    profile.childMode = true;
+    profile.childPassword = pw;
+    saveProfile(profile);
+    renderModes();
+    speak("아이 모드를 켰어요. 이제 비밀번호 없이는 기록을 지울 수 없어요.");
+  });
+  $("btn-mode-parent").addEventListener("click", function () {
+    if (!profile.childMode) { speak("이미 부모 모드예요."); return; }
+    // 아이 모드 해제 — 비밀번호 확인
+    var input = window.prompt("부모 모드로 바꾸려면 비밀번호를 입력하세요:\n(잊으셨다면 '초기화'라고 입력)", "");
+    if (input == null) return;      // 취소
+    input = String(input).trim();
+    if (input === profile.childPassword) {
       profile.childMode = false;
       saveProfile(profile);
-      renderDiary(diaryKey);
-      speak("자녀 모드를 껐어요.");
+      renderModes();
+      speak("부모 모드로 바꿨어요.");
+      return;
     }
+    if (input === "초기화") {
+      // 비밀번호 분실 복구 — 어른 확인(오늘 날짜)을 거쳐 재설정
+      var d = window.prompt("확인을 위해 오늘 날짜를 숫자로 입력하세요.\n(예: 2026-07-11)", "");
+      if (d != null && String(d).trim() === FoodDiary.todayKey()) {
+        profile.childMode = false;
+        profile.childPassword = "";
+        saveProfile(profile);
+        renderModes();
+        speak("비밀번호를 초기화하고 부모 모드로 바꿨어요.");
+      } else if (d != null) {
+        speak("날짜가 맞지 않아요. 아이 모드를 유지합니다.");
+      }
+      return;
+    }
+    speak("비밀번호가 틀렸어요. 아이 모드를 유지합니다.");
   });
   $("btn-diary-clear").addEventListener("click", function () {
-    if (profile.childMode) return; // 자녀 모드에서는 삭제 불가 (버튼도 숨김)
+    if (profile.childMode) return; // 아이 모드에서는 삭제 불가 (버튼도 숨김)
     // 원탭 영구 삭제 방지 — 기록이 있을 때만, 한 번 확인 후 삭제
     if (!FoodDiary.entriesFor(diaryKey).length) { speak("지울 기록이 없어요."); return; }
     if (!window.confirm("이 날의 식사 기록을 모두 지울까요?\n지운 기록은 되돌릴 수 없어요.")) return;
@@ -1023,6 +1289,7 @@
   if ($("app-version")) $("app-version").textContent = "버전 v" + APP_VERSION;
   saveProfile(profile); // 기본/마이그레이션 프로필을 저장해 두 번째 실행부터는 저장본 사용
   renderProfileChips();
+  renderModes();
   buildWheel();
   updateHome();
   show("home");

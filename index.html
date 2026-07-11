@@ -75,6 +75,7 @@
   #screen-result.green  { background: var(--green);  color: #fff; }
   #screen-result.yellow { background: var(--yellow); color: #fff; }
   #screen-result.red    { background: var(--red);    color: #fff; }
+  #screen-result.neutral { background: #1A5276; color: #fff; } /* 물건 알아보기 등 판정 아님 */
   #result-emoji { font-size: 4.6rem; line-height: 1; margin-top: 24px; }
   #result-label { font-size: 2.8rem; font-weight: 900; }
   #result-detail { font-size: 1.35rem; line-height: 1.6; max-width: 480px; white-space: pre-line; }
@@ -156,8 +157,6 @@
   .bowls-guide { width: 100%; max-width: 440px; background: #FFF6E5; border-radius: 12px;
     padding: 12px 14px; font-size: 1.05rem; font-weight: bold; color: #7A5A00; text-align: center; }
 
-  /* 자녀 모드 켜짐 상태 버튼 강조 */
-  #btn-child-mode.on { background: var(--accent); color: #fff; }
 
   /* 위험 조언 박스 (합병증·위험 음식·운동) */
   #diary-risk:empty { display: none; }
@@ -205,6 +204,29 @@
   .disclaimer { font-size: 0.9rem; color: #777; line-height: 1.5; max-width: 460px; }
   .linkbtn { background: none; border: none; color: #888; font-size: 0.95rem;
     text-decoration: underline; cursor: pointer; font-family: inherit; }
+
+  /* 건강 나무 — 초록불이면 자라고, 빨간불이 잦으면 시든다 */
+  .tree-card { text-align: center; padding: 16px; }
+  .tree-fig { font-size: 4rem; line-height: 1.15; display: inline-block;
+    transform-origin: 50% 100%; animation: tree-sway 3.2s ease-in-out infinite;
+    transition: filter 0.6s; }
+  .tree-fig.wilted { filter: grayscale(0.75) brightness(0.92);
+    animation: tree-droop 4s ease-in-out infinite; }
+  .tree-fig.bloom { animation: tree-sway 3.2s ease-in-out infinite, tree-pop 0.6s ease-out; }
+  .tree-msg { margin-top: 6px; font-size: 1.05rem; font-weight: bold; color: var(--accent); }
+  .tree-card .wilted ~ .tree-msg, .tree-msg.wilted { color: var(--red); }
+  @keyframes tree-sway { 0%, 100% { transform: rotate(-2.5deg); } 50% { transform: rotate(2.5deg); } }
+  @keyframes tree-droop { 0%, 100% { transform: rotate(6deg) translateY(3px); } 50% { transform: rotate(9deg) translateY(5px); } }
+  @keyframes tree-pop { 0% { scale: 0.6; } 70% { scale: 1.15; } 100% { scale: 1; } }
+
+  /* 사용 모드 버튼 (부모/아이) */
+  .modebtn.on { background: var(--accent); color: #fff; }
+
+  /* 바코드 스캔 박스 */
+  #scan-box { display: none; width: 78%; max-width: 340px; height: 130px;
+    border: 4px dashed rgba(255,255,255,0.95); border-radius: 14px;
+    box-shadow: 0 0 0 2000px rgba(0,0,0,0.25); }
+  #scan-box.show { display: block; }
 
   /* 행운 돌림판 */
   .ticket-count { font-size: 1.2rem; font-weight: bold; color: var(--accent); }
@@ -254,6 +276,23 @@
   <h1>🥗 푸드케어 렌즈</h1>
   <p class="sub">찍기만 하면, 우리 가족 식탁을 지켜드립니다</p>
 
+  <!-- 건강 나무: 최근 식단이 좋으면 자라고 꽃이 피고, 빨간불이 잦으면 시든다 -->
+  <div class="card tree-card">
+    <div id="tree-fig" class="tree-fig">🌰</div>
+    <p id="tree-msg" class="tree-msg">음식을 기록하면 씨앗이 싹을 틔워요</p>
+  </div>
+
+  <!-- 핵심 동작 버튼 — 스크롤 없이 바로 보이도록 나무 바로 아래에 -->
+  <button id="btn-food" class="bigbtn">🍚 음식 사진 AI 분석</button>
+  <button id="btn-barcode" class="bigbtn">🏷️ 바코드 스캔 (빠르고 정확)</button>
+  <button id="btn-scan" class="bigbtn">📷 성분표 찍기</button>
+  <div class="btnrow">
+    <button id="btn-object" class="bigbtn secondary small">🔍 물건 알아보기</button>
+    <button id="btn-diary" class="bigbtn secondary small">📒 식단 기록</button>
+  </div>
+  <button id="btn-wheel" class="bigbtn secondary">🎡 행운 돌림판</button>
+
+  <!-- 설정 카드들 — 처음 한 번만 만지면 되는 항목이라 아래로 -->
   <div class="card">
     <label>내 질환 — 없으면 그대로 두세요 (여러 개 선택 가능)</label>
     <div class="chips" style="margin-top:10px;">
@@ -285,10 +324,14 @@
     <p id="bmi-line" class="disclaimer" style="margin-top:8px; min-height:1.2em;"></p>
   </div>
 
-  <button id="btn-food" class="bigbtn">🍚 음식 사진 AI 분석</button>
-  <button id="btn-scan" class="bigbtn">📷 성분표 찍기</button>
-  <button id="btn-diary" class="bigbtn secondary">📒 식단 기록 보기</button>
-  <button id="btn-wheel" class="bigbtn secondary">🎡 행운 돌림판</button>
+  <div class="card">
+    <label>사용 모드 — 아이 모드는 기록을 지울 수 없어요 (비밀번호 잠금)</label>
+    <div class="btnrow" style="margin-top:10px;">
+      <button id="btn-mode-parent" class="bigbtn secondary small modebtn">👨‍👩‍👧 부모 모드</button>
+      <button id="btn-mode-child" class="bigbtn secondary small modebtn">🧒 아이 모드</button>
+    </div>
+  </div>
+
   <div class="btnrow">
     <button id="btn-manual" class="bigbtn secondary small">✏️ 직접 입력</button>
     <button id="btn-settings" class="bigbtn secondary small">🔑 AI 설정</button>
@@ -302,6 +345,7 @@
   <video id="video" autoplay playsinline muted></video>
   <div id="camera-overlay">
     <div id="camera-guide">영양성분표를 화면에 비춰 주세요</div>
+    <div id="scan-box"></div>
     <div>
       <div id="camera-hint">화면 아무 곳이나 누르면 찍힙니다</div>
       <button id="btn-camera-cancel" class="bigbtn secondary small" style="margin-top:12px; max-width:200px;">✕ 취소</button>
@@ -348,7 +392,7 @@
   <table class="nutri" id="food-table"></table>
   <p id="food-note"></p>
   <div id="food-warnings" class="food-warnings"></div>
-  <div class="card">
+  <div class="card" id="meal-card">
     <label>언제 드신 건가요?</label>
     <div class="mealchips" style="margin-top:10px; justify-content:center;">
       <button class="mchip" data-meal="breakfast">🌅 아침</button>
@@ -382,7 +426,6 @@
   <div id="diary-risk"></div>
   <div id="diary-list"></div>
   <button id="btn-diary-speak" class="bigbtn">🔊 식단 평가 듣기</button>
-  <button id="btn-child-mode" class="bigbtn secondary small">👶 자녀 모드</button>
   <div class="btnrow">
     <button id="btn-diary-add" class="bigbtn secondary small">🍚 음식 추가</button>
     <button id="btn-diary-clear" class="bigbtn secondary small">이 날 기록 지우기</button>
@@ -460,6 +503,8 @@
 <script src="js/diary.js"></script>
 <script src="js/advice.js"></script>
 <script src="js/draw.js"></script>
+<script src="js/tree.js"></script>
+<script src="js/barcode.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>
