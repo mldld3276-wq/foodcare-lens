@@ -4,11 +4,11 @@
   "use strict";
 
   // 앱 버전 — 배포할 때마다 올린다. 폰에서 최신 버전이 로드됐는지 확인용.
-  var APP_VERSION = "3.1";
+  var APP_VERSION = "3.2";
 
   var $ = function (id) { return document.getElementById(id); };
   var screens = ["home", "camera", "progress", "manual", "result", "food", "diary",
-    "wheel", "winner", "symptom", "apikey", "fail"];
+    "wheel", "winner", "symptom", "plan", "apikey", "fail"];
 
   // A등급 당첨자를 여러 이용자에게서 모으려면 중앙 저장소가 필요.
   // 아래 구글 폼 정보를 채우면 A 당첨 시 이름·전화번호를 구글 시트로도 전송한다.
@@ -26,6 +26,8 @@
   var selectedMeal = "lunch";         // 식사 구분 선택값
   var diaryKey = FoodDiary.todayKey(); // 식단표에서 보고 있는 날짜
   var jobId = 0;                      // 분석 작업 세대 — 취소 시 증가시켜 늦은 결과 무시
+  var lastProblem = "";               // 마지막 판정에서 문제가 된 항목 (대체 상품 제안용)
+  var planPick = { goal: "keep", activity: "", style: "" }; // 맞춤 식단 선택지
 
   /** AI 응답 문자열을 innerHTML에 넣기 전 이스케이프 (XSS 방지) */
   function esc(s) {
@@ -71,7 +73,9 @@
     if (!el) return;
     if (b) {
       var kcal = FoodDiary.dailyKcalTarget(profile);
-      el.textContent = "BMI " + b.value + " (" + b.category + ") · 하루 권장 약 " + kcal + "kcal";
+      var goal = FoodDiary.goalSuggestion(profile);
+      el.textContent = "BMI " + b.value + " (" + b.category + ") · 하루 권장 약 " + kcal + "kcal" +
+        (goal ? " → " + goal.text : "");
     } else {
       el.textContent = "";
     }
@@ -619,6 +623,14 @@
     // 판정 보류 상품은 식단표 기록도 막는다 (100g 수치가 하루 합산을 왜곡)
     $("btn-food-save").style.display = food._noJudge ? "none" : "";
     $("meal-card").style.display = food._noJudge ? "none" : "";
+
+    // 위험·주의면 '대신 뭘 먹을까?' 버튼 노출 — 문제가 된 항목을 기억해 둔다
+    var risky = !food._noJudge && (meal.overall === "red" || meal.overall === "yellow");
+    lastProblem = risky
+      ? meal.results.filter(function (r) { return r.color === "red" || r.color === "yellow"; })
+          .map(function (r) { return r.name + " 기준 " + r.label + " (" + r.detail + ")"; }).join(", ")
+      : "";
+    $("btn-alternative").style.display = risky ? "" : "none";
 
     // 분량: 밥공기 환산 + AI 조언
     var bowls = FoodDiary.kcalToBowls(food.kcal);
@@ -1195,6 +1207,117 @@
       return;
     }
     startCamera("menu");
+  });
+
+  // ── 대신 뭘 먹을까? (대체 상품 제안) ──────────────────────────
+  $("btn-alternative").addEventListener("click", function () {
+    if (!lastFood || !lastProblem) return;
+    show("progress");
+    $("ocr-progress").textContent = "더 안전한 대체 식품을 찾고 있어요…";
+    speak("더 안전한 대체 식품을 찾고 있어요.");
+    var my = ++jobId;
+    FoodAI.suggestAlternatives(lastFood.food_name, lastProblem, apiKey(), profile.diseases)
+      .then(function (r) {
+        if (my !== jobId) return;
+        var screen = $("screen-result");
+        screen.classList.remove("green", "yellow", "red", "neutral");
+        screen.classList.add("neutral");
+        $("result-emoji").textContent = "🔄";
+        $("result-label").textContent = "이 대신 어때요?";
+        var lines = [lastFood.food_name + " — " + lastProblem, ""];
+        r.alternatives.forEach(function (a) {
+          lines.push("✅ " + a.name + (a.reason ? " — " + a.reason : ""));
+        });
+        if (r.tip) lines.push("", "💡 그래도 드시고 싶다면: " + r.tip);
+        $("result-detail").textContent = lines.join("\n");
+        $("result-disclaimer").textContent = "AI 추천이에요. 참고만 하세요.";
+        show("result");
+        var first = r.alternatives[0];
+        speak(lastFood.food_name + " 대신 " + first.name + "를 추천해요. " + (first.reason || "") +
+          (r.tip ? " 그래도 드시고 싶다면, " + r.tip : "") + " 참고만 하세요.");
+      }).catch(function (err) {
+        if (my !== jobId) return;
+        showFoodResult(lastFood); // 원래 결과 화면으로 복귀
+        speak(aiErrorMsg(err));
+      });
+  });
+
+  // ── 맞춤 식단 짜기 (BMI 목표 → 선택지 → AI 식단) ─────────────
+  function renderPlanChips() {
+    [].forEach.call(document.querySelectorAll(".pchip"), function (btn) {
+      btn.classList.toggle("on", planPick[btn.dataset.group] === btn.dataset.value);
+    });
+  }
+  [].forEach.call(document.querySelectorAll(".pchip"), function (btn) {
+    btn.addEventListener("click", function () {
+      planPick[btn.dataset.group] = btn.dataset.value; // 그룹당 하나 선택
+      renderPlanChips();
+    });
+  });
+  $("btn-plan").addEventListener("click", function () {
+    if (!apiKey()) {
+      show("apikey");
+      speak("맞춤 식단에는 AI 설정이 필요해요. API 키를 입력해 주세요.");
+      $("apikey-input").focus();
+      return;
+    }
+    // BMI가 있으면 목표를 미리 골라준다
+    var sug = FoodDiary.goalSuggestion(profile);
+    if (sug) {
+      planPick.goal = sug.goal;
+      $("plan-hint").textContent = "BMI를 보니 " + sug.text + ". 목표를 바꿔도 돼요.";
+      speak(sug.text + ". 목표와 생활을 고르고 식단 만들기를 눌러 주세요.");
+    } else {
+      $("plan-hint").textContent = "목표와 생활을 고르면 AI가 하루 식단을 짜 드려요. (키·몸무게를 넣으면 더 정확해요)";
+      speak("목표와 생활을 고르면 하루 식단을 짜 드려요.");
+    }
+    renderPlanChips();
+    show("plan");
+  });
+  $("btn-plan-back").addEventListener("click", function () { show("home"); });
+  $("btn-plan-ok").addEventListener("click", function () {
+    if (!planPick.activity || !planPick.style) {
+      speak("활동량과 식사 스타일도 골라 주세요.");
+      return;
+    }
+    var kcalTarget = FoodDiary.planKcalTarget(profile, planPick.goal);
+    var b = FoodDiary.bmi(profile);
+    var body = b ? { height: profile.height, weight: profile.weight, bmi: b.value } : null;
+    show("progress");
+    $("ocr-progress").textContent = "목표에 맞는 하루 식단을 짜고 있어요…";
+    speak("목표에 맞는 하루 식단을 짜고 있어요. 잠시만요.");
+    var my = ++jobId;
+    FoodAI.suggestDietPlan(apiKey(), profile.diseases, body, planPick.goal,
+      planPick.activity, planPick.style, kcalTarget)
+      .then(function (r) {
+        if (my !== jobId) return;
+        var screen = $("screen-result");
+        screen.classList.remove("green", "yellow", "red", "neutral");
+        screen.classList.add("neutral");
+        var goalKo = { diet: "다이어트", gain: "근육 증량", keep: "유지" }[planPick.goal];
+        $("result-emoji").textContent = "💪";
+        $("result-label").textContent = goalKo + " 하루 식단";
+        var icon = { "아침": "🌅", "점심": "☀️", "저녁": "🌙", "간식": "🍪" };
+        var lines = ["하루 목표 약 " + kcalTarget + "kcal", ""];
+        r.meals.forEach(function (m) {
+          lines.push((icon[m.meal] || "") + " " + m.meal + ": " + m.menu +
+            (m.note ? " (" + m.note + ")" : ""));
+        });
+        if (r.exercise) lines.push("", "🏃 운동: " + r.exercise);
+        if (r.tip) lines.push("💡 " + r.tip);
+        $("result-detail").textContent = lines.join("\n");
+        $("result-disclaimer").textContent =
+          "AI 제안이에요. 질환 식이요법은 의사·영양사와 상의하세요.";
+        show("result");
+        var first = r.meals[0];
+        speak(goalKo + " 하루 식단이에요. 하루 목표 약 " + kcalTarget + "칼로리. " +
+          first.meal + "은 " + first.menu + ". 자세한 건 화면을 봐 주세요." +
+          (r.exercise ? " 운동은 " + r.exercise : ""));
+      }).catch(function (err) {
+        if (my !== jobId) return;
+        show("plan");
+        speak(aiErrorMsg(err));
+      });
   });
 
   // ── 몸의 신호 확인 (이상징후 문진) ────────────────────────────

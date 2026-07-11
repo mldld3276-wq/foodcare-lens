@@ -302,6 +302,23 @@
     return lines.join("\n");
   }
 
+  /** BMI 기반 목표 추천 (순수 함수). 정보 없으면 null */
+  function goalSuggestion(profile) {
+    var b = bmi(profile);
+    if (!b) return null;
+    if (b.value < 18.5) return { goal: "gain", text: "체중을 조금 늘리는 게 좋아 보여요" };
+    if (b.value >= 25) return { goal: "diet", text: "다이어트를 추천해요" };
+    if (b.value >= 23) return { goal: "diet", text: "가벼운 다이어트를 추천해요" };
+    return { goal: "keep", text: "지금 체중을 유지하면 좋아요" };
+  }
+
+  /** 목표별 하루 칼로리 (순수 함수): 다이어트 -400, 증량 +400, 유지 그대로. 최소 1200 */
+  function planKcalTarget(profile, goal) {
+    var base = dailyKcalTarget(profile);
+    var adjusted = goal === "diet" ? base - 400 : goal === "gain" ? base + 400 : base;
+    return Math.max(1200, Math.round(adjusted / 50) * 50);
+  }
+
   /** 오늘 남은 한도 (순수 함수) — 메뉴 추천용. 음수는 0으로 */
   function remainingBudget(totals, profile) {
     var limits = evaluateDiet(totals, profile).limits;
@@ -360,6 +377,7 @@
     kcalToBowls: kcalToBowls, guessMealType: guessMealType,
     bmi: bmi, dailyKcalTarget: dailyKcalTarget, bowlsGuide: bowlsGuide, kcalSummary: kcalSummary,
     recentDietSummary: recentDietSummary, remainingBudget: remainingBudget,
+    goalSuggestion: goalSuggestion, planKcalTarget: planKcalTarget,
     monthGrid: monthGrid, streakCount: streakCount, monthStampCount: monthStampCount,
     MEAL_TYPES: MEAL_TYPES, MEAL_KO: MEAL_KO, MEAL_ICON: MEAL_ICON,
     dateToKey: dateToKey, todayKey: todayKey, addDaysKey: addDaysKey, weekSummary: weekSummary,

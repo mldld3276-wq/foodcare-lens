@@ -256,6 +256,97 @@
       tip: typeof obj.tip === "string" ? obj.tip.trim() : "" };
   }
 
+  /** 대체 상품 제안 프롬프트 (순수 함수) — 위험 판정 음식의 안전한 대안 */
+  function alternativePrompt(foodName, problem, diseases) {
+    return withRo(foodName) + " 판정한 결과가 좋지 않았습니다. 문제: " + problem + ". " +
+      whoLine(diseases) + " " +
+      "이 음식 대신 먹을 수 있는, 마트나 편의점에서 구하기 쉬운 더 안전한 대체 식품 2~3가지를 추천하세요. " +
+      "이유는 문제가 된 영양소와 연결해 한 문장으로 쓰세요. 특정 상표보다는 종류로 추천하세요(예: 무가당 두유, 저나트륨 김)." +
+      "\n\n반드시 아래 JSON 형식 하나만 출력하세요. 설명·코드펜스 없이 JSON만:\n" +
+      "{\n" +
+      "  \"alternatives\": [ { \"name\": \"대체 식품\", \"reason\": \"이유 한 문장\" } ],\n" +
+      "  \"tip\": \"그래도 이 음식을 먹고 싶을 때의 팁 한 문장(예: 반만 드세요)\"\n" +
+      "}";
+  }
+  // withRo는 app.js에 있으므로 여기서는 간단 버전 사용
+  function withRo(word) {
+    var last = String(word).charCodeAt(String(word).length - 1);
+    if (last < 0xAC00 || last > 0xD7A3) return word + "를";
+    return word + (((last - 0xAC00) % 28) === 0 ? "를" : "을");
+  }
+
+  /** 대체 상품 응답 → {alternatives:[{name,reason}], tip} (순수 함수). 없으면 null */
+  function parseAlternativeReply(text) {
+    var obj = extractJson(text);
+    if (!obj || !Array.isArray(obj.alternatives)) return null;
+    var alts = obj.alternatives.filter(function (a) {
+      return a && typeof a.name === "string" && a.name.trim();
+    }).slice(0, 3).map(function (a) {
+      return { name: a.name.trim(),
+        reason: typeof a.reason === "string" ? a.reason.trim() : "" };
+    });
+    if (!alts.length) return null;
+    return { alternatives: alts, tip: typeof obj.tip === "string" ? obj.tip.trim() : "" };
+  }
+
+  /** 브라우저 전용: 위험 음식 → 대체 식품 추천 */
+  function suggestAlternatives(foodName, problem, apiKey, diseases) {
+    return callVision(null, alternativePrompt(foodName, problem, diseases), apiKey)
+      .then(function (text) {
+        var parsed = parseAlternativeReply(text);
+        if (!parsed) throw new Error("PARSE");
+        return parsed;
+      });
+  }
+
+  /** 맞춤 식단 프롬프트 (순수 함수) — 목표·활동량·식사 스타일 반영 */
+  var GOAL_KO = { diet: "다이어트(체중 감량)", gain: "근육 증량(체중 늘리기)", keep: "체중 유지" };
+  function dietPlanPrompt(diseases, body, goal, activity, style, kcalTarget) {
+    return whoLine(diseases) + " " +
+      (body ? "키 " + body.height + "cm, 몸무게 " + body.weight + "kg, BMI " + body.bmi + ". " : "") +
+      "목표: " + (GOAL_KO[goal] || GOAL_KO.keep) + ". " +
+      "활동량: " + activity + ". 식사 스타일: " + style + ". " +
+      "하루 목표 열량 약 " + kcalTarget + "kcal에 맞춰, 한국에서 구하기 쉬운 재료로 " +
+      "아침·점심·저녁·간식 하루 식단을 짜 주세요. 질환에 위험한 음식은 넣지 마세요. " +
+      (goal === "gain" ? "단백질을 충분히 넣으세요. " : "") +
+      (goal === "diet" ? "포만감이 오래가는 구성으로 하세요. " : "") +
+      "\n\n반드시 아래 JSON 형식 하나만 출력하세요. 설명·코드펜스 없이 JSON만:\n" +
+      "{\n" +
+      "  \"meals\": [ { \"meal\": \"아침\" | \"점심\" | \"저녁\" | \"간식\",\n" +
+      "               \"menu\": \"메뉴 구성(간단히)\",\n" +
+      "               \"note\": \"짧은 이유나 팁(선택)\" } ],\n" +
+      "  \"exercise\": \"목표에 맞는 운동 한 가지(한 문장)\",\n" +
+      "  \"tip\": \"실천 팁 한 문장\"\n" +
+      "}";
+  }
+
+  /** 식단 응답 → {meals:[{meal,menu,note}], exercise, tip} (순수 함수). 부실하면 null */
+  function parseDietPlanReply(text) {
+    var obj = extractJson(text);
+    if (!obj || !Array.isArray(obj.meals)) return null;
+    var VALID = ["아침", "점심", "저녁", "간식"];
+    var meals = obj.meals.filter(function (m) {
+      return m && VALID.indexOf(m.meal) !== -1 && typeof m.menu === "string" && m.menu.trim();
+    }).slice(0, 5).map(function (m) {
+      return { meal: m.meal, menu: m.menu.trim(),
+        note: typeof m.note === "string" ? m.note.trim() : "" };
+    });
+    if (meals.length < 3) return null; // 최소 세 끼는 있어야 식단
+    return { meals: meals,
+      exercise: typeof obj.exercise === "string" ? obj.exercise.trim() : "",
+      tip: typeof obj.tip === "string" ? obj.tip.trim() : "" };
+  }
+
+  /** 브라우저 전용: 목표·선택지 → 하루 맞춤 식단 */
+  function suggestDietPlan(apiKey, diseases, body, goal, activity, style, kcalTarget) {
+    return callVision(null, dietPlanPrompt(diseases, body, goal, activity, style, kcalTarget), apiKey)
+      .then(function (text) {
+        var parsed = parseDietPlanReply(text);
+        if (!parsed) throw new Error("PARSE");
+        return parsed;
+      });
+  }
+
   /** 브라우저 전용: 메뉴판 사진 → 추천/회피 목록 */
   function analyzeMenuBoard(base64Jpeg, apiKey, diseases, remaining, todaySummary) {
     return callVision(base64Jpeg, menuBoardPrompt(diseases, remaining, todaySummary), apiKey)
@@ -471,6 +562,10 @@
     menuPrompt: menuPrompt, parseMenuReply: parseMenuReply, suggestMenu: suggestMenu,
     menuBoardPrompt: menuBoardPrompt, parseMenuBoardReply: parseMenuBoardReply,
     analyzeMenuBoard: analyzeMenuBoard,
+    alternativePrompt: alternativePrompt, parseAlternativeReply: parseAlternativeReply,
+    suggestAlternatives: suggestAlternatives,
+    dietPlanPrompt: dietPlanPrompt, parseDietPlanReply: parseDietPlanReply,
+    suggestDietPlan: suggestDietPlan,
     buildGeminiRequest: buildGeminiRequest, parseGeminiText: parseGeminiText,
     detectProvider: detectProvider, foodPrompt: foodPrompt, labelPrompt: labelPrompt,
     analyzeFoodImage: analyzeFoodImage, analyzeLabelImage: analyzeLabelImage,

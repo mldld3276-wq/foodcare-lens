@@ -94,6 +94,66 @@ test("메뉴판 파싱: is_menu false는 유효, picks 전무+is_menu true는 nu
   assert.equal(parseMenuBoardReply("응답 불가"), null);
 });
 
+// ── 대체 상품 제안 ─────────────────────────────────────────────
+test("대체 프롬프트: 음식명·문제·질환 포함", () => {
+  const { alternativePrompt } = require("../js/ai.js");
+  const p = alternativePrompt("신라면", "고혈압 기준 위험 (나트륨 1790mg)", ["hypertension"]);
+  assert.match(p, /신라면/);
+  assert.match(p, /나트륨 1790mg/);
+  assert.match(p, /고혈압 환자/);
+  assert.match(p, /대체/);
+  assert.match(p, /JSON/);
+});
+
+test("대체 파싱: 최대 3개, 이름 없는 항목 제외, 전무하면 null", () => {
+  const { parseAlternativeReply } = require("../js/ai.js");
+  const r = parseAlternativeReply(JSON.stringify({ alternatives: [
+    { name: "저나트륨 라면", reason: "나트륨이 절반이에요" },
+    { name: "" }, { name: "메밀국수" }, { name: "A" }, { name: "B" }
+  ], tip: "국물은 남기세요" }));
+  assert.equal(r.alternatives.length, 3);
+  assert.equal(r.alternatives[0].name, "저나트륨 라면");
+  assert.match(r.tip, /국물/);
+  assert.equal(parseAlternativeReply(JSON.stringify({ alternatives: [] })), null);
+  assert.equal(parseAlternativeReply("없음"), null);
+});
+
+// ── 맞춤 식단 (다이어트/증량) ──────────────────────────────────
+test("식단 프롬프트: 목표·활동량·스타일·칼로리·몸 정보 포함", () => {
+  const { dietPlanPrompt } = require("../js/ai.js");
+  const p = dietPlanPrompt(["diabetes"], { height: 170, weight: 80, bmi: 27.7 },
+    "diet", "가끔 걸어요", "한식 위주", 1500);
+  assert.match(p, /다이어트/);
+  assert.match(p, /가끔 걸어요/);
+  assert.match(p, /한식 위주/);
+  assert.match(p, /1500\s*kcal|1500kcal/);
+  assert.match(p, /BMI 27.7/);
+  assert.match(p, /당뇨 환자/);
+  assert.match(p, /포만감/);          // 다이어트 특화 지시
+  const g = dietPlanPrompt([], null, "gain", "운동을 해요", "고기를 좋아해요", 2300);
+  assert.match(g, /단백질/);          // 증량 특화 지시
+  assert.doesNotMatch(g, /BMI/);      // 몸 정보 없으면 생략
+});
+
+test("식단 파싱: 세 끼 이상 유효해야 성공, 아니면 null", () => {
+  const { parseDietPlanReply } = require("../js/ai.js");
+  const ok = parseDietPlanReply(JSON.stringify({ meals: [
+    { meal: "아침", menu: "현미밥과 두부국", note: "든든해요" },
+    { meal: "점심", menu: "닭가슴살 샐러드" },
+    { meal: "저녁", menu: "생선구이와 나물" },
+    { meal: "간식", menu: "방울토마토" },
+    { meal: "야식", menu: "라면" } // 유효하지 않은 끼니 — 제외
+  ], exercise: "식후 30분 걷기", tip: "물을 자주 드세요" }));
+  assert.equal(ok.meals.length, 4);
+  assert.equal(ok.meals[0].meal, "아침");
+  assert.match(ok.exercise, /걷기/);
+  // 두 끼뿐이면 실패
+  assert.equal(parseDietPlanReply(JSON.stringify({ meals: [
+    { meal: "아침", menu: "밥" }, { meal: "점심", menu: "면" }
+  ] })), null);
+  assert.equal(parseDietPlanReply("불가"), null);
+});
+
 test("텍스트 전용 요청: 이미지 없이도 유효한 본문", () => {
   const gem = buildGeminiRequest(null, "질문");
   assert.equal(gem.contents[0].parts.length, 1);

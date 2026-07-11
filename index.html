@@ -230,6 +230,11 @@
     border: 2px solid #C8D8CC; background: #fff; color: #444; cursor: pointer; font-family: inherit; }
   .schip:active { background: #E8F1EA; }
 
+  /* 맞춤 식단 선택지 칩 (그룹당 하나 선택) */
+  .pchip { padding: 10px 14px; border-radius: 999px; font-size: 1rem; font-weight: bold;
+    border: 2px solid #C8D8CC; background: #fff; color: #666; cursor: pointer; font-family: inherit; }
+  .pchip.on { border-color: var(--accent); background: var(--accent); color: #fff; }
+
   /* 바코드 스캔 박스 */
   #scan-box { display: none; width: 78%; max-width: 340px; height: 130px;
     border: 4px dashed rgba(255,255,255,0.95); border-radius: 14px;
@@ -332,6 +337,7 @@
           placeholder="65" aria-label="몸무게(킬로그램)" style="width:70px;"> kg</span>
     </div>
     <p id="bmi-line" class="disclaimer" style="margin-top:8px; min-height:1.2em;"></p>
+    <button id="btn-plan" class="bigbtn secondary small" style="margin-top:8px;">💪 맞춤 식단 짜기</button>
   </div>
 
   <div class="card">
@@ -393,6 +399,36 @@
   <p class="disclaimer" id="result-disclaimer">참고용 안내입니다. 1회 제공량 기준입니다.</p>
 </section>
 
+<!-- 맞춤 식단 짜기 (BMI 기반 목표 → 선택지 → AI 하루 식단) -->
+<section id="screen-plan" class="screen center">
+  <h1>💪 맞춤 식단 짜기</h1>
+  <p id="plan-hint" class="sub">목표와 생활을 고르면 AI가 하루 식단을 짜 드려요.</p>
+  <div class="card" style="text-align:left;">
+    <label>목표</label>
+    <div class="chips" style="margin-top:8px;">
+      <button class="pchip" data-group="goal" data-value="diet">🔥 다이어트</button>
+      <button class="pchip" data-group="goal" data-value="gain">💪 근육 증량</button>
+      <button class="pchip" data-group="goal" data-value="keep">⚖️ 유지</button>
+    </div>
+    <label style="display:block; margin-top:12px;">활동량</label>
+    <div class="chips" style="margin-top:8px;">
+      <button class="pchip" data-group="activity" data-value="거의 안 움직여요">🛋️ 거의 안 움직여요</button>
+      <button class="pchip" data-group="activity" data-value="가끔 걸어요">🚶 가끔 걸어요</button>
+      <button class="pchip" data-group="activity" data-value="운동을 해요">🏃 운동을 해요</button>
+    </div>
+    <label style="display:block; margin-top:12px;">식사 스타일</label>
+    <div class="chips" style="margin-top:8px;">
+      <button class="pchip" data-group="style" data-value="한식 위주">🍚 한식 위주</button>
+      <button class="pchip" data-group="style" data-value="고기를 좋아해요">🥩 고기 좋아요</button>
+      <button class="pchip" data-group="style" data-value="생선·채소 위주">🐟 생선·채소</button>
+      <button class="pchip" data-group="style" data-value="간편식 위주">🥪 간편식</button>
+    </div>
+  </div>
+  <button id="btn-plan-ok" class="bigbtn">📋 식단 만들기</button>
+  <button id="btn-plan-back" class="bigbtn secondary small">← 처음으로</button>
+  <p class="disclaimer">AI 제안이에요. 질환 식이요법은 의사·영양사와 상의하세요.</p>
+</section>
+
 <!-- 몸의 신호 확인 (이상징후 문진 — 진단이 아닌 병원 신호 안내) -->
 <section id="screen-symptom" class="screen center">
   <h1>🩺 몸의 신호 확인</h1>
@@ -432,6 +468,7 @@
       <button class="mchip" data-meal="snack">🍪 간식</button>
     </div>
   </div>
+  <button id="btn-alternative" class="bigbtn secondary" style="display:none;">🔄 대신 뭘 먹을까?</button>
   <button id="btn-food-save" class="bigbtn">📒 식단표에 기록</button>
   <div class="btnrow">
     <button id="btn-food-retry" class="bigbtn secondary small">📷 다시 찍기</button>

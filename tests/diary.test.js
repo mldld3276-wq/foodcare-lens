@@ -152,6 +152,27 @@ test("평가(당뇨): byDisease에 당뇨 위험 기록", () => {
   assert.equal(r.byDisease.diabetes, "risk");
 });
 
+// ── BMI 목표 추천 + 목표별 칼로리 ─────────────────────────────
+test("목표 추천: BMI 구간별 다이어트/증량/유지", () => {
+  const { goalSuggestion } = require("../js/diary.js");
+  assert.equal(goalSuggestion({ height: 170, weight: 80 }).goal, "diet");   // BMI 27.7
+  assert.equal(goalSuggestion({ height: 170, weight: 68 }).goal, "diet");   // BMI 23.5 가벼운
+  assert.match(goalSuggestion({ height: 170, weight: 68 }).text, /가벼운/);
+  assert.equal(goalSuggestion({ height: 170, weight: 50 }).goal, "gain");   // BMI 17.3
+  assert.equal(goalSuggestion({ height: 170, weight: 60 }).goal, "keep");   // BMI 20.8
+  assert.equal(goalSuggestion({}), null); // 키·몸무게 없으면 null
+});
+
+test("목표별 칼로리: 다이어트 -400·증량 +400·최소 1200", () => {
+  const { planKcalTarget, dailyKcalTarget } = require("../js/diary.js");
+  const base = dailyKcalTarget({ height: 170 }); // 1900
+  assert.equal(planKcalTarget({ height: 170 }, "diet"), base - 400);
+  assert.equal(planKcalTarget({ height: 170 }, "gain"), base + 400);
+  assert.equal(planKcalTarget({ height: 170 }, "keep"), base);
+  // 아주 작은 체구여도 1200 아래로는 안 내려감
+  assert.ok(planKcalTarget({ height: 140 }, "diet") >= 1200);
+});
+
 // ── 문진용 식단 요약 + 남은 한도 ──────────────────────────────
 test("식단 요약: 최근 3일 음식명·합계 포함, 기록 없으면 빈 문자열", () => {
   const all = {
