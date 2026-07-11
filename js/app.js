@@ -4,7 +4,7 @@
   "use strict";
 
   // 앱 버전 — 배포할 때마다 올린다. 폰에서 최신 버전이 로드됐는지 확인용.
-  var APP_VERSION = "3.4";
+  var APP_VERSION = "3.5";
 
   var $ = function (id) { return document.getElementById(id); };
   var screens = ["home", "camera", "progress", "manual", "result", "food", "diary",
@@ -64,7 +64,23 @@
     $("severity").disabled = profile.diseases.length === 0;
     if (profile.height) $("in-height").value = profile.height;
     if (profile.weight) $("in-weight").value = profile.weight;
+    // 알레르기 칩 + 기타 입력
+    var sel = profile.allergies || [];
+    [].forEach.call(document.querySelectorAll(".achip"), function (btn) {
+      btn.classList.toggle("on", sel.indexOf(btn.textContent.trim()) !== -1);
+    });
+    if (profile.allergyCustom) $("in-allergy").value = profile.allergyCustom;
     renderBmi();
+  }
+
+  /** 등록된 알레르기 전체 목록 (칩 + 기타 입력) */
+  function getAllergies() {
+    var list = (profile.allergies || []).slice();
+    String(profile.allergyCustom || "").split(",").forEach(function (t) {
+      t = t.trim();
+      if (t && list.indexOf(t) === -1) list.push(t);
+    });
+    return list;
   }
 
   function renderBmi() {
@@ -296,6 +312,7 @@
       fat_g: label.fat_g == null ? undefined : label.fat_g,
       caffeine_mg: label.caffeine_mg == null ? undefined : label.caffeine_mg,
       purine_level: label.purine_level,
+      allergy_hits: label.allergy_hits || [],
       health_note: label.health_note || "",
       portion_advice: label.portion_advice || "",
       _label: true,
@@ -313,7 +330,7 @@
     $("ocr-progress").textContent = "AI가 성분표를 읽고 있어요…";
     var scaled = downscale(canvas, 1600); // 성분표 글자 판독용 — 음식보다 크게
     var base64 = scaled.toDataURL("image/jpeg", 0.9).split(",")[1];
-    FoodAI.analyzeLabelImage(base64, apiKey(), profile.diseases).then(function (label) {
+    FoodAI.analyzeLabelImage(base64, apiKey(), profile.diseases, getAllergies()).then(function (label) {
       if (my !== jobId) return;
       if (!label.is_label ||
           (label.sugar_g == null && label.sodium_mg == null && label.kcal == null)) {
@@ -382,6 +399,8 @@
       kcal: p.kcal, carbs_g: p.carbs_g, sugar_g: p.sugar_g,
       sodium_mg: p.sodium_mg, protein_g: p.protein_g, fat_g: p.fat_g,
       caffeine_mg: p.caffeine_mg,
+      // 상품 DB의 알레르겐(함유+혼입가능)과 등록 알레르기를 매칭
+      allergy_hits: FoodBarcode.matchAllergens(p.allergen_tags, getAllergies()),
       purine_level: "unknown", // 상품 DB에는 퓨린 정보가 없다 — 정직하게 판정 불가
       health_note: (p.brands ? "(" + p.brands + ") " : "") +
         (p.per === "converted" ? "1회 제공량으로 환산한 수치예요." : ""),
@@ -448,7 +467,7 @@
     var totals = FoodDiary.sumNutrition(FoodDiary.todayEntries());
     var remaining = FoodDiary.remainingBudget(totals, profile);
     var todaySummary = FoodDiary.recentDietSummary(FoodDiary.loadAll(), FoodDiary.todayKey(), 1);
-    FoodAI.analyzeMenuBoard(base64, apiKey(), profile.diseases, remaining, todaySummary)
+    FoodAI.analyzeMenuBoard(base64, apiKey(), profile.diseases, remaining, todaySummary, getAllergies())
       .then(function (r) {
         if (my !== jobId) return;
         if (!r.is_menu || !r.picks.length) {
@@ -545,7 +564,7 @@
     var scaled = downscale(canvas, 1200);
     var base64 = scaled.toDataURL("image/jpeg", 0.85).split(",")[1];
 
-    FoodAI.analyzeFoodImage(base64, apiKey(), profile.diseases).then(function (food) {
+    FoodAI.analyzeFoodImage(base64, apiKey(), profile.diseases, getAllergies()).then(function (food) {
       if (my !== jobId) return; // 사용자가 그만둔 작업
       // AI가 음식을 못 알아본 경우 — 수치가 전부 0이라 초록불 '안심'으로 오표시되는 것을 차단
       if (food.food_name === "알 수 없음" ||
@@ -608,6 +627,15 @@
       ? "바코드 상품 정보 · " + (food._per === "100g" ? "100g" : "1회 제공량") + " 기준"
       : (food._label ? "AI 성분표 판독 · 1회 제공량 기준 · 확신도 " : "AI 추정 · 확신도 ") +
         ({ high: "높음", medium: "보통", low: "낮음" }[food.confidence]);
+
+    // 🚨 알레르기 경고 — 판정보다 위, 가장 먼저 보이게 (판정 보류 상품에도 표시)
+    var allergyHits = food.allergy_hits || [];
+    if (allergyHits.length) {
+      $("food-allergy").innerHTML = "🚨 알레르기 주의! 등록하신 <b>" +
+        esc(allergyHits.join(", ")) + "</b>이(가) 들어있을 수 있어요. 드시지 마세요!";
+    } else {
+      $("food-allergy").innerHTML = "";
+    }
 
     // 질환별 신호등 칩 — 양 기준을 모르는 100g 상품은 오판정 대신 판정 보류
     if (food._noJudge) {
@@ -679,9 +707,15 @@
     selectMealChip(FoodDiary.guessMealType(new Date().getHours()));
     show("food");
 
+    // 알레르기 경고는 어떤 안내보다 먼저 말한다
+    var allergySpeech = allergyHits.length
+      ? "조심하세요! 등록하신 알레르기 재료, " + allergyHits.join(", ") +
+        "이 들어있을 수 있어요. 드시지 않는 게 좋아요. "
+      : "";
+
     // 판정 보류(100g 기준): 판정·기록 없이 정보만 알려주고 성분표 촬영을 권한다
     if (food._noJudge) {
-      speak(food.food_name + " 상품이에요. 수치는 100그램 기준이라 드시는 양에 따라 달라져서 판정은 보류했어요. " +
+      speak(allergySpeech + food.food_name + " 상품이에요. 수치는 100그램 기준이라 드시는 양에 따라 달라져서 판정은 보류했어요. " +
         "정확한 판정이 필요하면 성분표를 찍어 주세요.");
       return;
     }
@@ -710,8 +744,9 @@
       ? " 이 봉지는 총 " + food._servings + "회 제공량이라, 전부 드시면 말씀드린 수치의 " +
         food._servings + "배예요."
       : "";
-    // 바코드는 추정이 아니라 상품 DB 조회 — 문구를 구분한다
-    var speech = (food._barcode ? food.food_name + " 상품이에요. " : withRo(food.food_name) + " 보여요. ") +
+    // 바코드는 추정이 아니라 상품 DB 조회 — 문구를 구분한다. 알레르기 경고가 항상 먼저.
+    var speech = allergySpeech +
+      (food._barcode ? food.food_name + " 상품이에요. " : withRo(food.food_name) + " 보여요. ") +
       ((food._barcode || food._label) ? "1회 제공량 기준이에요. " : "") +
       (bowls.text ? bowls.text + "이에요. " : "") +
       verdictSpeech + "." + unknownSpeech + servingsSpeech + " " +
@@ -1178,6 +1213,27 @@
   }
   $("in-height").addEventListener("input", onBodyInput);
   $("in-weight").addEventListener("input", onBodyInput);
+
+  // 알레르기 칩 토글 + 기타 입력
+  [].forEach.call(document.querySelectorAll(".achip"), function (btn) {
+    btn.addEventListener("click", function () {
+      var name = btn.textContent.trim();
+      if (!profile.allergies) profile.allergies = [];
+      var idx = profile.allergies.indexOf(name);
+      if (idx === -1) {
+        profile.allergies.push(name);
+        speak(name + " 알레르기를 등록했어요. 이제 음식에서 발견되면 경고해 드려요.");
+      } else {
+        profile.allergies.splice(idx, 1);
+      }
+      saveProfile(profile);
+      renderProfileChips();
+    });
+  });
+  $("in-allergy").addEventListener("input", function () {
+    profile.allergyCustom = $("in-allergy").value;
+    saveProfile(profile);
+  });
 
   $("btn-scan").addEventListener("click", function () { startCamera("label"); });
   $("btn-barcode").addEventListener("click", function () {

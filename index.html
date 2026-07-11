@@ -249,6 +249,20 @@
   /* 정보 초기화 — 위험 동작 */
   .dangerbtn { background: #2A1518; color: #F87171; border: 1px solid #4C1D1F; box-shadow: none; }
 
+  /* 알레르기 칩 — 선택 시 빨강 (경고 성격) */
+  .achip { padding: 10px 14px; border-radius: 999px; font-size: 1rem; font-weight: bold;
+    border: 1.5px solid var(--border); background: var(--card2); color: var(--muted);
+    cursor: pointer; font-family: inherit; }
+  .achip.on { border-color: var(--red); background: var(--red); color: #fff; }
+
+  /* 알레르기 경고 박스 — 판정보다 위에, 가장 눈에 띄게 */
+  .allergy-warn { width: 100%; max-width: 440px; background: #3A0D10; border: 2px solid var(--red);
+    border-radius: 14px; padding: 12px 14px; font-size: 1.1rem; font-weight: bold;
+    color: #FCA5A5; line-height: 1.5; animation: allergy-blink 1.2s ease-in-out 3; }
+  .allergy-warn:empty { display: none; }
+  .allergy-warn b { color: #fff; }
+  @keyframes allergy-blink { 0%, 100% { border-color: var(--red); } 50% { border-color: #fff; } }
+
   /* 증상 예시 칩 */
   .schip { padding: 10px 14px; border-radius: 999px; font-size: 1rem; font-weight: bold;
     border: 1.5px solid var(--border); background: var(--card2); color: var(--fg);
@@ -351,6 +365,25 @@
         <option value="severe">중증</option>
       </select>
     </div>
+  </div>
+
+  <div class="card">
+    <label>알레르기 — 있는 것만 선택하세요 (음식·바코드·메뉴판에서 🚨 경고)</label>
+    <div class="chips" style="margin-top:10px;">
+      <button class="achip">계란</button>
+      <button class="achip">우유</button>
+      <button class="achip">밀</button>
+      <button class="achip">대두</button>
+      <button class="achip">땅콩</button>
+      <button class="achip">견과류</button>
+      <button class="achip">갑각류</button>
+      <button class="achip">생선</button>
+      <button class="achip">메밀</button>
+      <button class="achip">복숭아</button>
+    </div>
+    <input id="in-allergy" type="text" placeholder="기타 (쉼표로 구분 — 예: 토마토, 조개)"
+      aria-label="기타 알레르기 입력"
+      style="margin-top:10px; width:100%; font-size:1rem; padding:11px; border:1.5px solid var(--border); border-radius:10px; font-family:inherit;">
   </div>
 
   <div class="card">
@@ -480,6 +513,7 @@
 <section id="screen-food" class="screen">
   <div id="food-name">김치찌개</div>
   <div id="food-confidence">AI 추정 · 확신도 높음</div>
+  <div id="food-allergy" class="allergy-warn"></div>
   <div class="verdicts" id="food-verdicts"></div>
   <div id="food-portion"><span class="bowls">🍚🥄</span> <span class="ptext">밥 약 1.5공기 분량</span></div>
   <div id="food-advice">🥄 절반만 드세요</div>

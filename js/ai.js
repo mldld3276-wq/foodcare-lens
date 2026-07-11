@@ -30,6 +30,22 @@
       : "사용자는 특별한 질환이 없는 일반 사용자입니다. health_note와 portion_advice는 일반적인 건강 관리 관점에서 작성하세요.";
   }
 
+  /** 알레르기 지시문 (순수 함수). 없으면 "" */
+  function allergyLine(allergies) {
+    var list = (allergies || []).filter(Boolean);
+    if (!list.length) return "";
+    return "사용자 알레르기: " + list.join(", ") + ". " +
+      "이 재료가 들어있거나 들어있을 가능성이 있으면 allergy_hits 배열에 해당 항목(사용자 표기 그대로)을 넣으세요. " +
+      "확실하지 않아도 가능성이 있으면 넣으세요(안전 우선). 없으면 빈 배열. ";
+  }
+
+  /** allergy_hits 방어 파싱 (순수) — 문자열 배열만 통과 */
+  function cleanAllergyHits(v) {
+    if (!Array.isArray(v)) return [];
+    return v.filter(function (x) { return typeof x === "string" && x.trim(); })
+      .map(function (x) { return x.trim(); }).slice(0, 10);
+  }
+
   // 이미지 1장 + 텍스트 프롬프트로 된 표준 요청 본문.
   // 구조화 출력(output_config.format)은 브라우저 직접 호출에서 형식 불일치로 400을 내므로
   // 사용하지 않고, 프롬프트에서 JSON 형식을 지시한 뒤 파서가 방어적으로 추출한다.
@@ -61,6 +77,7 @@
     "  \"protein_g\": 숫자(단백질 g, 없으면 -1),\n" +
     "  \"fat_g\": 숫자(지방 g, 없으면 -1),\n" +
     "  \"caffeine_mg\": 숫자(카페인 mg, 커피·차·에너지드링크·초콜릿 등. 없으면 -1),\n" +
+    "  \"allergy_hits\": [\"성분표의 알레르기 표기와 사용자 알레르기가 겹치는 항목들 (없으면 [])\"],\n" +
     "  \"servings_per_pack\": 숫자(총 제공 횟수, 없으면 -1),\n" +
     "  \"purine_level\": \"low\" | \"medium\" | \"high\" | \"unknown\",\n" +
     "  \"health_note\": \"한 줄 조언(한국어, 60자 이내)\",\n" +
@@ -75,33 +92,39 @@
     "  \"kcal\": 숫자, \"carbs_g\": 숫자, \"sugar_g\": 숫자, \"sodium_mg\": 숫자,\n" +
     "  \"protein_g\": 숫자, \"fat_g\": 숫자,\n" +
     "  \"caffeine_mg\": 숫자(카페인 mg, 커피·차·에너지드링크·초콜릿 등. 없으면 0),\n" +
+    "  \"allergy_hits\": [\"사용자 알레르기 재료 중 들어있을 가능성이 있는 것들 (없으면 [])\"],\n" +
     "  \"purine_level\": \"low\" | \"medium\" | \"high\",\n" +
     "  \"health_note\": \"한 줄 조언(한국어, 60자 이내)\",\n" +
     "  \"portion_advice\": \"섭취량 조언(한국어, 40자 이내)\"\n" +
     "}";
 
   /** 성분표 판독 프롬프트 (순수 함수) */
-  function labelPrompt(diseases) {
+  function labelPrompt(diseases, allergies) {
     return "사진 속 영양성분표를 읽어 주세요. 수치는 반드시 1회 제공량 기준으로 환산해 주세요 " +
       "(표가 100g 기준 또는 총 내용량 기준이면 1회 제공량으로 환산하고, 1회 제공량 정보가 없으면 표에 적힌 값을 그대로). " +
       "표에 없는 항목은 -1로 하세요. 0으로 적지 마세요. " +
       "제품 종류를 보고 퓨린 등급도 추정하되, 무슨 제품인지 알 수 없으면 unknown으로 하세요. " +
-      whoLine(diseases) + " " +
+      whoLine(diseases) + " " + allergyLine(allergies) +
+      "성분표 주변의 알레르기 유발물질 표기(함유·혼입 가능)도 꼭 읽으세요. " +
       "영양성분표가 보이지 않는 사진이면 is_label을 false로 하세요." + LABEL_JSON_SPEC;
   }
 
   /** 음식 추정 프롬프트 (순수 함수) */
-  function foodPrompt(diseases) {
+  function foodPrompt(diseases, allergies) {
     return "사진 속 음식이 무엇인지 알아보고, 사진에 보이는 양 기준 영양성분을 추정해 주세요. " +
       "모든 수치는 대략적인 추정치입니다. 음식이 여러 개면 전체 합으로 추정하세요. " +
-      whoLine(diseases) + " " +
+      whoLine(diseases) + " " + allergyLine(allergies) +
       "음식이 아니거나 알아볼 수 없으면 food_name을 \"알 수 없음\", confidence를 \"low\"로 하고 수치는 0으로 하세요." +
       FOOD_JSON_SPEC;
   }
 
   /** Claude 성분표/음식 요청 본문 (순수 함수, 테스트용) */
-  function buildLabelRequest(base64Jpeg, diseases) { return visionRequest(base64Jpeg, labelPrompt(diseases)); }
-  function buildFoodRequest(base64Jpeg, diseases) { return visionRequest(base64Jpeg, foodPrompt(diseases)); }
+  function buildLabelRequest(base64Jpeg, diseases, allergies) {
+    return visionRequest(base64Jpeg, labelPrompt(diseases, allergies));
+  }
+  function buildFoodRequest(base64Jpeg, diseases, allergies) {
+    return visionRequest(base64Jpeg, foodPrompt(diseases, allergies));
+  }
 
   /** 바코드 숫자 판독 프롬프트 (순수 함수) — 자동 인식이 안 되는 기기의 AI 폴백 */
   function barcodePrompt() {
@@ -213,10 +236,13 @@
     return { menus: menus, tip: typeof obj.tip === "string" ? obj.tip.trim() : "" };
   }
 
-  /** 식당 메뉴판 골라주기 프롬프트 (순수 함수) — 남은 한도·오늘 식단 반영 */
-  function menuBoardPrompt(diseases, remaining, todaySummary) {
+  /** 식당 메뉴판 골라주기 프롬프트 (순수 함수) — 남은 한도·오늘 식단·알레르기 반영 */
+  function menuBoardPrompt(diseases, remaining, todaySummary, allergies) {
+    var alg = (allergies || []).filter(Boolean);
     return "사진은 식당 메뉴판(또는 급식표)입니다. 메뉴판에 실제로 적힌 메뉴만 읽고, " +
       "사용자에게 맞는 선택을 골라 주세요. " + whoLine(diseases) + " " +
+      (alg.length ? "사용자 알레르기: " + alg.join(", ") +
+        ". 이 재료가 들어갈 가능성이 큰 메뉴는 반드시 avoid로 분류하고 이유에 알레르기를 명시하세요. " : "") +
       "오늘 남은 섭취 한도: 당류 " + remaining.sugarG + "g, 나트륨 " + remaining.sodiumMg +
       "mg, 열량 " + remaining.kcal + "kcal. " +
       (todaySummary ? "오늘 이미 먹은 것:\n" + todaySummary + "\n" : "오늘은 아직 기록된 식사가 없습니다. ") +
@@ -348,8 +374,8 @@
   }
 
   /** 브라우저 전용: 메뉴판 사진 → 추천/회피 목록 */
-  function analyzeMenuBoard(base64Jpeg, apiKey, diseases, remaining, todaySummary) {
-    return callVision(base64Jpeg, menuBoardPrompt(diseases, remaining, todaySummary), apiKey)
+  function analyzeMenuBoard(base64Jpeg, apiKey, diseases, remaining, todaySummary, allergies) {
+    return callVision(base64Jpeg, menuBoardPrompt(diseases, remaining, todaySummary, allergies), apiKey)
       .then(function (text) {
         var parsed = parseMenuBoardReply(text);
         if (!parsed) throw new Error("PARSE");
@@ -413,6 +439,7 @@
     if (["high", "medium", "low"].indexOf(obj.purine_level) === -1) obj.purine_level = "low";
     if (typeof obj.health_note !== "string") obj.health_note = "";
     if (typeof obj.portion_advice !== "string") obj.portion_advice = "";
+    obj.allergy_hits = cleanAllergyHits(obj.allergy_hits);
     return obj;
   }
 
@@ -432,6 +459,7 @@
     if (["high", "medium", "low", "unknown"].indexOf(obj.purine_level) === -1) obj.purine_level = "unknown";
     if (typeof obj.health_note !== "string") obj.health_note = "";
     if (typeof obj.portion_advice !== "string") obj.portion_advice = "";
+    obj.allergy_hits = cleanAllergyHits(obj.allergy_hits);
     return obj;
   }
 
@@ -522,8 +550,8 @@
   }
 
   /** 브라우저 전용: 음식 사진(base64 JPEG) → 영양 추정 */
-  function analyzeFoodImage(base64Jpeg, apiKey, diseases) {
-    return callVision(base64Jpeg, foodPrompt(diseases), apiKey).then(function (text) {
+  function analyzeFoodImage(base64Jpeg, apiKey, diseases, allergies) {
+    return callVision(base64Jpeg, foodPrompt(diseases, allergies), apiKey).then(function (text) {
       var parsed = parseAiReply(text);
       if (!parsed) throw new Error("PARSE");
       return parsed;
@@ -531,8 +559,8 @@
   }
 
   /** 브라우저 전용: 성분표 사진(base64 JPEG) → 라벨 판독 */
-  function analyzeLabelImage(base64Jpeg, apiKey, diseases) {
-    return callVision(base64Jpeg, labelPrompt(diseases), apiKey).then(function (text) {
+  function analyzeLabelImage(base64Jpeg, apiKey, diseases, allergies) {
+    return callVision(base64Jpeg, labelPrompt(diseases, allergies), apiKey).then(function (text) {
       var parsed = parseLabelReply(text);
       if (!parsed) throw new Error("PARSE");
       return parsed;

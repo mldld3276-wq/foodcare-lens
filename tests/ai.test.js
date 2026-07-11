@@ -233,6 +233,26 @@ test("AI 파싱: 순수 JSON", () => {
   assert.equal(r.sugar_g, 5);
 });
 
+test("AI 요청·파싱: 알레르기 지시·allergy_hits 방어", () => {
+  // 알레르기가 있으면 프롬프트에 목록+지시 포함
+  const p = buildFoodRequest("X", ["diabetes"], ["계란", "땅콩"]).messages[0].content[1].text;
+  assert.match(p, /알레르기: 계란, 땅콩/);
+  assert.match(p, /allergy_hits/);
+  // 없으면 알레르기 목록 지시문 없음 (JSON 스키마 키 설명은 항상 있음)
+  const q = buildFoodRequest("X", ["diabetes"]).messages[0].content[1].text;
+  assert.doesNotMatch(q, /알레르기: /);
+  // 파싱: 정상 배열 통과, 이상값은 []
+  const withHits = Object.assign({}, GOOD, { allergy_hits: ["계란", 3, "  ", "땅콩"] });
+  assert.deepEqual(parseAiReply(JSON.stringify(withHits)).allergy_hits, ["계란", "땅콩"]);
+  assert.deepEqual(parseAiReply(JSON.stringify(GOOD)).allergy_hits, []);
+  const bad = Object.assign({}, GOOD, { allergy_hits: "계란" });
+  assert.deepEqual(parseAiReply(JSON.stringify(bad)).allergy_hits, []);
+  // 성분표·메뉴판 프롬프트에도 반영
+  assert.match(buildLabelRequest("X", [], ["우유"]).messages[0].content[1].text, /알레르기: 우유/);
+  const { menuBoardPrompt } = require("../js/ai.js");
+  assert.match(menuBoardPrompt([], { sugarG: 1, sodiumMg: 1, kcal: 1 }, "", ["새우"]), /알레르기: 새우.*avoid/);
+});
+
 test("AI 요청·파싱: 카페인 포함", () => {
   assert.match(buildFoodRequest("X").messages[0].content[1].text, /caffeine_mg/);
   const r = parseAiReply(JSON.stringify(Object.assign({}, GOOD, { caffeine_mg: 95 })));

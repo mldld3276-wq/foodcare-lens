@@ -8,7 +8,54 @@
 
   function offUrl(code) {
     return "https://world.openfoodfacts.org/api/v2/product/" + encodeURIComponent(code) +
-      ".json?fields=product_name,product_name_ko,brands,nutriments,serving_quantity,serving_size";
+      ".json?fields=product_name,product_name_ko,brands,nutriments,serving_quantity,serving_size" +
+      ",allergens_tags,traces_tags";
+  }
+
+  // OFF 알레르겐 태그(en:xxx) → 한국어 동의어들
+  var ALLERGEN_KO = {
+    "eggs": ["계란", "달걀"], "egg": ["계란", "달걀"],
+    "milk": ["우유", "유제품", "유당"],
+    "gluten": ["밀", "글루텐"], "wheat": ["밀"],
+    "soybeans": ["대두", "콩"], "soy": ["대두", "콩"],
+    "peanuts": ["땅콩"],
+    "nuts": ["견과류", "견과", "호두", "아몬드"], "tree-nuts": ["견과류", "견과"],
+    "crustaceans": ["갑각류", "새우", "게"], "shrimp": ["새우", "갑각류"],
+    "fish": ["생선"],
+    "molluscs": ["조개", "조개류", "굴", "홍합"],
+    "sesame": ["참깨", "깨"], "sesame-seeds": ["참깨", "깨"],
+    "buckwheat": ["메밀"],
+    "celery": ["셀러리"], "mustard": ["겨자"],
+    "sulphur-dioxide-and-sulphites": ["아황산류", "아황산"],
+    "peach": ["복숭아"], "pork": ["돼지고기"], "tomato": ["토마토"]
+  };
+
+  /** OFF 태그 배열 → 한국어 동의어 묶음 배열 (순수) */
+  function allergenSynonyms(tags) {
+    return (tags || []).map(function (t) {
+      var key = String(t).replace(/^[a-z]{2}:/, "").toLowerCase();
+      return ALLERGEN_KO[key] || [key];
+    });
+  }
+
+  /**
+   * 상품 알레르겐 태그 vs 사용자 알레르기 목록 매칭 (순수 함수).
+   * @returns {string[]} 걸린 항목 — 사용자가 등록한 표현 그대로
+   */
+  function matchAllergens(productTags, userAllergies) {
+    var groups = allergenSynonyms(productTags);
+    var hits = [];
+    (userAllergies || []).forEach(function (ua) {
+      var term = String(ua).trim();
+      if (!term) return;
+      var hit = groups.some(function (syns) {
+        return syns.some(function (s) {
+          return s.indexOf(term) !== -1 || term.indexOf(s) !== -1;
+        });
+      });
+      if (hit && hits.indexOf(term) === -1) hits.push(term);
+    });
+    return hits;
   }
 
   function num(v) {
@@ -64,7 +111,9 @@
       sodium_mg: sodiumMg,
       protein_g: num(scaled("proteins")),
       fat_g: num(scaled("fat")),
-      caffeine_mg: caffeineMg
+      caffeine_mg: caffeineMg,
+      // 알레르겐: 함유(allergens) + 혼입 가능(traces) 태그를 모두 경고 대상으로
+      allergen_tags: (p.allergens_tags || []).concat(p.traces_tags || [])
     };
 
     // 판정에 쓸 수 있는 값이 하나도 없으면 '없는 상품' 취급 (성분표 촬영으로 유도)
@@ -104,5 +153,5 @@
   }
 
   return { offUrl: offUrl, parseProduct: parseProduct, lookup: lookup,
-    scanSupported: scanSupported };
+    scanSupported: scanSupported, matchAllergens: matchAllergens };
 });

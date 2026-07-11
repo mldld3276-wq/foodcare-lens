@@ -88,6 +88,30 @@ test("AI 바코드 파싱: 숫자만 추출, 8~14자리 아니면 빈 문자열"
   assert.equal(parseBarcodeReply("읽을 수 없음"), "");
 });
 
+// ── 알레르기 매칭 ──────────────────────────────────────────────
+test("알레르겐 매칭: OFF 태그 ↔ 한국어 동의어 (계란=달걀)", () => {
+  const { matchAllergens } = require("../js/barcode.js");
+  const tags = ["en:eggs", "en:milk", "en:gluten"];
+  assert.deepEqual(matchAllergens(tags, ["달걀"]), ["달걀"]);   // eggs 동의어
+  assert.deepEqual(matchAllergens(tags, ["계란"]), ["계란"]);
+  assert.deepEqual(matchAllergens(tags, ["우유", "땅콩"]), ["우유"]); // 땅콩 없음
+  assert.deepEqual(matchAllergens(tags, ["밀"]), ["밀"]);       // gluten → 밀
+  assert.deepEqual(matchAllergens(tags, []), []);
+  assert.deepEqual(matchAllergens([], ["계란"]), []);
+});
+
+test("상품 파싱: allergens+traces 태그 합산", () => {
+  const json = { status: 1, product: {
+    product_name: "과자",
+    nutriments: { "energy-kcal_100g": 500 },
+    allergens_tags: ["en:milk"], traces_tags: ["en:peanuts"]
+  } };
+  const p = parseProduct(json);
+  assert.deepEqual(p.allergen_tags, ["en:milk", "en:peanuts"]);
+  const { matchAllergens } = require("../js/barcode.js");
+  assert.deepEqual(matchAllergens(p.allergen_tags, ["땅콩"]), ["땅콩"]); // 혼입 가능도 경고
+});
+
 // ── 물건 알아보기 ──────────────────────────────────────────────
 test("물건 요청: 이미지 + JSON 지시 포함", () => {
   const req = buildObjectRequest("B64");
